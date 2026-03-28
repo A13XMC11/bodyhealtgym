@@ -138,16 +138,18 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
-      {/* Alerts Section */}
-      {expiringMembers.length > 0 && (
-        <div className="space-y-4">
-          <h3 className="text-white font-bold text-lg">⚠️ Membresías Próximas a Vencer</h3>
+      {/* Alerts Section - Always visible */}
+      <div className="space-y-4">
+        <h3 className="text-white font-bold text-lg">⚠️ Membresías Próximas a Vencer</h3>
 
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
-              <h4 className="text-yellow-400 font-bold">Membresías Próximas a Vencer en 7 días</h4>
-            </div>
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+            <h4 className="text-yellow-400 font-bold">Membresías Próximas a Vencer en 7 días</h4>
+          </div>
+          {expiringMembers.length === 0 ? (
+            <p className="text-gym-gray text-sm text-center py-8">Sin membresías próximas a vencer</p>
+          ) : (
             <div className="space-y-2">
               {expiringMembers.map((member) => {
                 const daysLeft = Math.max(0, Math.floor((new Date(member.fecha_vencimiento) - new Date()) / 86400000))
@@ -178,9 +180,9 @@ export default function Dashboard() {
                 )
               })}
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

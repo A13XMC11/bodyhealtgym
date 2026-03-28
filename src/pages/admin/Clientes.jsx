@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList, MessageCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
@@ -180,6 +180,15 @@ export default function Clientes() {
       label: 'Verificar',
       color: 'bg-gray-500/10 text-gray-400'
     }
+  }
+
+  const sendWhatsApp = (phone, message) => {
+    if (!phone) {
+      alert('Este cliente no tiene teléfono registrado')
+      return
+    }
+    const clean = phone.replace(/[\s+\-()]/g, '')
+    window.open(`https://wa.me/${clean}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -371,12 +380,33 @@ export default function Clientes() {
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-gym-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-white font-bold text-lg">
-                Historial — {showPagos.nombre} {showPagos.apellido}
-              </h3>
-              <button onClick={() => setShowPagos(null)} className="text-gym-gray hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <div>
+                <h3 className="text-white font-bold text-lg">
+                  Historial — {showPagos.nombre} {showPagos.apellido}
+                </h3>
+                <p className="text-gym-gray text-xs mt-1">{showPagos.email}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() =>
+                    sendWhatsApp(
+                      showPagos.telefono,
+                      `Hola ${showPagos.nombre}, ¿cómo estás? Te escribo de Body Health Gym. 💪`
+                    )
+                  }
+                  title={showPagos.telefono ? 'Enviar WhatsApp' : 'Sin teléfono registrado'}
+                  className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+                    showPagos.telefono
+                      ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20'
+                      : 'bg-gray-500/10 text-gray-400 cursor-not-allowed opacity-50'
+                  }`}
+                >
+                  <MessageCircle className="w-4 h-4" />
+                </button>
+                <button onClick={() => setShowPagos(null)} className="text-gym-gray hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Tab Bar */}

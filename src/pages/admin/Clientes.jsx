@@ -183,11 +183,8 @@ export default function Clientes() {
         notasTotal = ['Inscripción $5']
       }
 
-      // Apply discount to total
+      // Apply discount by creating a negative payment (this will automatically reduce totals everywhere)
       const montoFinal = Math.max(0, montoTotal - descuento)
-      if (descuento > 0) {
-        notasTotal.push(`Descuento -$${descuento.toFixed(2)}`)
-      }
 
       // Insert all payments
       if (pagosACrear.length > 0) {
@@ -199,6 +196,18 @@ export default function Clientes() {
           mes_correspondiente: fechaInscripcion.substring(0, 7),
           notas: notasTotal.join(' + '),
         }))
+
+        // Add discount as a negative payment if discount exists
+        if (descuento > 0) {
+          pagosParaInsert.push({
+            client_id: client.id,
+            tipo: 'descuento',
+            monto: -descuento, // Negative amount to reduce totals
+            fecha_pago: fechaInscripcion,
+            mes_correspondiente: fechaInscripcion.substring(0, 7),
+            notas: `Descuento aplicado -$${descuento.toFixed(2)}`,
+          })
+        }
 
         const { error: pagoError } = await supabase.from('payments').insert(pagosParaInsert)
         if (pagoError) throw pagoError
@@ -248,7 +257,7 @@ export default function Clientes() {
     const [p, a] = await Promise.all([
       supabase
         .from('payments')
-        .select('*, promotions(nombre)')
+        .select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)')
         .eq('client_id', client.id)
         .order('fecha_pago', { ascending: false }),
       supabase

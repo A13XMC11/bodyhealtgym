@@ -39,7 +39,7 @@ export default function Reportes() {
     setLoading(true)
     try {
       const [paymentsRes, clientsRes] = await Promise.all([
-        supabase.from('payments').select('*, clients(nombre, apellido)'),
+        supabase.from('payments').select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)'),
         supabase.from('clients').select('id, nombre, apellido, estado'),
       ])
 

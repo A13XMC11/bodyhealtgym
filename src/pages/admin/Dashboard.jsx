@@ -26,7 +26,7 @@ export default function Dashboard() {
 
       const [clientsRes, paymentsRes, membershipsRes, attendanceRes] = await Promise.all([
         supabase.from('clients').select('id, nombre, apellido, telefono, estado, email'),
-        supabase.from('payments').select('monto, fecha_pago').gte('fecha_pago', thisMonthStart).lte('fecha_pago', thisMonthEnd),
+        supabase.from('payments').select('id, client_id, monto, fecha_pago, clients(id, nombre, apellido, email)').gte('fecha_pago', thisMonthStart).lte('fecha_pago', thisMonthEnd),
         supabase.from('memberships').select('id, client_id, fecha_vencimiento').gte('fecha_vencimiento', format(now, 'yyyy-MM-dd')).order('fecha_vencimiento', { ascending: true }),
         supabase.from('attendance').select('id').eq('fecha', format(now, 'yyyy-MM-dd')),
       ])

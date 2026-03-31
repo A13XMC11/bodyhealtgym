@@ -32,6 +32,8 @@ export default function Pagos() {
   const [montoCalculado, setMontoCalculado] = useState(0)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [precioBase, setPrecioBase] = useState(PRECIOS_BASE.mensual)
+  const [clienteEstado, setClienteEstado] = useState(null)
+  const [checkingCliente, setCheckingCliente] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue } = useForm({
     defaultValues: { tipo: 'mensual', precio_diario: 3 }
@@ -40,10 +42,9 @@ export default function Pagos() {
   const tipoWatch = watch('tipo')
   const promoWatch = watch('promocion_id')
   const precioDiario = watch('precio_diario')
+  const clientWatch = watch('client_id')
 
-  useEffect(() => {
-    fetchAll()
-  }, [user])
+  useEffect(() => { fetchAll() }, [user])
 
   useEffect(() => {
     let base = PRECIOS_BASE[tipoWatch] ?? Number(precioDiario) ?? 3
@@ -53,6 +54,56 @@ export default function Pagos() {
     setSelectedPromo(promo || null)
     setMontoCalculado(calcularMonto(tipoWatch, promo, base))
   }, [tipoWatch, promoWatch, precioDiario, promociones])
+
+  useEffect(() => {
+    if (!clientWatch) { setClienteEstado(null); return }
+    verificarCliente(clientWatch)
+  }, [clientWatch])
+
+  const verificarCliente = async (clientId) => {
+    setCheckingCliente(true)
+    const [mensualRes, inscripcionRes] = await Promise.all([
+      supabase
+        .from('payments')
+        .select('fecha_pago')
+        .eq('client_id', clientId)
+        .eq('tipo', 'mensual')
+        .order('fecha_pago', { ascending: false })
+        .limit(1),
+      supabase
+        .from('payments')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('tipo', 'inscripcion')
+        .limit(1),
+    ])
+
+    const tieneInscripcion = (inscripcionRes.data?.length ?? 0) > 0
+
+    let bloqueoMensual = false
+    let fechaVencimiento = null
+    let fechaRenovacion = null
+
+    if (mensualRes.data?.length > 0) {
+      const ultimoMensual = new Date(mensualRes.data[0].fecha_pago)
+      // Normalizar a medianoche para evitar diferencias de hora
+      ultimoMensual.setHours(0, 0, 0, 0)
+
+      fechaVencimiento = new Date(ultimoMensual)
+      fechaVencimiento.setDate(fechaVencimiento.getDate() + 30)
+
+      fechaRenovacion = new Date(fechaVencimiento)
+      fechaRenovacion.setDate(fechaRenovacion.getDate() - 10)
+
+      const hoy = new Date()
+      hoy.setHours(0, 0, 0, 0)
+
+      bloqueoMensual = hoy < fechaRenovacion
+    }
+
+    setClienteEstado({ tieneInscripcion, bloqueoMensual, fechaVencimiento, fechaRenovacion })
+    setCheckingCliente(false)
+  }
 
   const fetchAll = async () => {
     setLoading(true)
@@ -70,6 +121,19 @@ export default function Pagos() {
   const onSubmit = async (formData) => {
     setSaving(true)
     try {
+      // Validaciones de bloqueo antes de llegar a Supabase
+      if (clienteEstado?.tieneInscripcion && formData.tipo === 'inscripcion') {
+        toast.error('No se puede registrar este pago. Este cliente ya tiene inscripción registrada.')
+        setSaving(false)
+        return
+      }
+      if (clienteEstado?.bloqueoMensual && formData.tipo === 'mensual') {
+        const fechaVenc = format(clienteEstado.fechaVencimiento, 'dd MMM yyyy', { locale: es })
+        toast.error(`No se puede registrar este pago. Mensualidad activa hasta el ${fechaVenc}.`)
+        setSaving(false)
+        return
+      }
+
       const promo = promociones.find((p) => p.id === formData.promocion_id)
       let base = PRECIOS_BASE[formData.tipo] ?? 3
       if (formData.tipo === 'diario') base = Number(formData.precio_diario) || 3
@@ -249,29 +313,64 @@ export default function Pagos() {
           <div className="bg-gym-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-white font-bold text-lg">Registrar Pago</h3>
-              <button onClick={() => { setShowModal(false); reset() }} className="text-gym-gray hover:text-white btn-icon">
+              <button onClick={() => { setShowModal(false); reset(); setClienteEstado(null) }} className="text-gym-gray hover:text-white btn-icon">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div>
                 <label className="block text-gym-gray text-xs mb-1">Cliente</label>
-                <select {...register('client_id', { required: true })}
-                  className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red">
-                  <option value="">Seleccionar cliente...</option>
-                  {clientes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <select {...register('client_id', { required: true })}
+                    className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red">
+                    <option value="">Seleccionar cliente...</option>
+                    {clientes.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nombre} {c.apellido}</option>
+                    ))}
+                  </select>
+                  {checkingCliente && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="w-4 h-4 border-2 border-gym-red border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Aviso estado mensualidad */}
+                {clienteEstado && !checkingCliente && (
+                  <>
+                    {clienteEstado.bloqueoMensual && (
+                      <div className="mt-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2.5 text-yellow-400 text-xs leading-relaxed">
+                        ⚠️ Mensualidad activa hasta el{' '}
+                        <span className="font-bold">{format(clienteEstado.fechaVencimiento, 'dd MMM yyyy', { locale: es })}</span>.
+                        {' '}Podrás renovar a partir del{' '}
+                        <span className="font-bold">{format(clienteEstado.fechaRenovacion, 'dd MMM yyyy', { locale: es })}</span>.
+                      </div>
+                    )}
+                    {!clienteEstado.bloqueoMensual && clienteEstado.fechaVencimiento && (
+                      <div className="mt-2 bg-green-500/10 border border-green-500/30 rounded-lg px-3 py-2.5 text-green-400 text-xs">
+                        ✅ Renovación disponible. Vence el{' '}
+                        <span className="font-bold">{format(clienteEstado.fechaVencimiento, 'dd MMM yyyy', { locale: es })}</span>.
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
+
               <div>
                 <label className="block text-gym-gray text-xs mb-1">Tipo de pago</label>
                 <select {...register('tipo')}
                   className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red">
                   <option value="mensual">Mensual — $25</option>
                   <option value="diario">Diario</option>
-                  <option value="inscripcion">Inscripción — $5</option>
+                  <option value="inscripcion" disabled={clienteEstado?.tieneInscripcion}>
+                    Inscripción — $5{clienteEstado?.tieneInscripcion ? ' (ya pagado)' : ''}
+                  </option>
                 </select>
+                {clienteEstado?.tieneInscripcion && (
+                  <p className="text-gym-gray text-xs mt-1">
+                    Este cliente ya tiene inscripción registrada.
+                  </p>
+                )}
               </div>
               {tipoWatch === 'diario' && (
                 <div>
@@ -316,9 +415,17 @@ export default function Pagos() {
                 </div>
               </div>
 
-              <button type="submit" disabled={saving}
-                className="w-full bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-3 rounded-xl btn-interactive">
-                {saving ? 'Guardando...' : `Registrar — $${montoCalculado.toFixed(2)}`}
+              <button
+                type="submit"
+                disabled={
+                  saving ||
+                  checkingCliente ||
+                  (clienteEstado?.bloqueoMensual && tipoWatch === 'mensual') ||
+                  (clienteEstado?.tieneInscripcion && tipoWatch === 'inscripcion')
+                }
+                className="w-full bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-3 rounded-xl btn-interactive"
+              >
+                {saving ? 'Guardando...' : checkingCliente ? 'Verificando...' : `Registrar — $${montoCalculado.toFixed(2)}`}
               </button>
             </form>
           </div>

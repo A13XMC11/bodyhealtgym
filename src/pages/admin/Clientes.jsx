@@ -1,79 +1,97 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm, Controller } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList, MessageCircle, ChevronDown, Calendar } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList, MessageCircle, Calendar } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { parsePhoneNumberFromString, isValidPhoneNumber } from 'libphonenumber-js'
 
-// Country codes for phone input
-const COUNTRY_CODES = [
-  { code: '+593', country: 'Ecuador', flag: '🇪🇨' },
-  { code: '+54', country: 'Argentina', flag: '🇦🇷' },
-  { code: '+56', country: 'Chile', flag: '🇨🇱' },
-  { code: '+57', country: 'Colombia', flag: '🇨🇴' },
-  { code: '+51', country: 'Perú', flag: '🇵🇪' },
-  { code: '+1', country: 'USA', flag: '🇺🇸' },
-  { code: '+34', country: 'España', flag: '🇪🇸' },
-]
+function countryCodeToFlag(countryCode) {
+  return countryCode
+    .toUpperCase()
+    .split('')
+    .map((c) => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
+    .join('')
+}
 
-// Phone Input Component with Country Code Selector
-function PhoneInputWithCode({ field }) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [selectedCode, setSelectedCode] = useState(COUNTRY_CODES[0])
+function normalizePhone(raw) {
+  const digits = raw.replace(/\D/g, '')
+  if (raw.startsWith('+')) {
+    return raw
+  }
+  if (digits.startsWith('09') && digits.length === 10) {
+    return `+593${digits.slice(1)}`
+  }
+  if (digits.startsWith('0') && digits.length >= 9 && digits.length <= 11) {
+    const parsed = parsePhoneNumberFromString(raw, 'EC')
+    return parsed ? parsed.number : raw
+  }
+  return raw
+}
 
-  const phoneNumber = field.value ? field.value.replace(/\D/g, '').replace(selectedCode.code.replace('+', ''), '') : ''
+function parseBadge(raw) {
+  if (!raw) return null
+  const normalized = normalizePhone(raw)
+  const parsed = parsePhoneNumberFromString(normalized)
+  if (!parsed?.country) return null
+  return { flag: countryCodeToFlag(parsed.country), code: `+${parsed.countryCallingCode}` }
+}
 
-  const handleCodeChange = (newCode) => {
-    setSelectedCode(newCode)
-    const numberOnly = field.value ? field.value.replace(/\D/g, '').replace(selectedCode.code.replace('+', ''), '') : ''
-    field.onChange(`${newCode.code}${numberOnly}`)
-    setIsOpen(false)
+function PhoneInputWithCode({ field, error }) {
+  const [touched, setTouched] = useState(false)
+  const raw = field.value || ''
+
+  const normalized = raw ? normalizePhone(raw) : ''
+  const isValid = normalized ? isValidPhoneNumber(normalized) : null
+  const badge = parseBadge(raw)
+
+  const borderStyle = !touched || raw === ''
+    ? {}
+    : isValid
+      ? { borderColor: '#22c55e' }
+      : { borderColor: '#ef4444' }
+
+  const handleChange = (e) => {
+    field.onChange(e.target.value)
   }
 
-  const handlePhoneChange = (e) => {
-    const numberOnly = e.target.value.replace(/\D/g, '')
-    field.onChange(`${selectedCode.code}${numberOnly}`)
+  const handleBlur = () => {
+    setTouched(true)
+    if (normalized && normalized !== raw) {
+      field.onChange(normalized)
+    }
+    field.onBlur?.()
   }
 
   return (
-    <div className="relative flex">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 bg-gym-black border border-white/10 rounded-lg rounded-r-none px-3 py-2.5 text-white text-sm hover:border-gym-red/50 transition-colors flex-shrink-0"
+    <div className="space-y-1">
+      <div
+        className="flex items-center bg-gym-black border border-white/10 rounded-lg overflow-hidden transition-all duration-200"
+        style={borderStyle}
       >
-        <span className="text-base">{selectedCode.flag}</span>
-        <span className="font-semibold">{selectedCode.code}</span>
-        <ChevronDown className="w-3 h-3 text-gym-gray" />
-      </button>
-
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-gym-dark border border-white/10 rounded-lg shadow-lg z-10 w-48 max-h-64 overflow-y-auto">
-          {COUNTRY_CODES.map((cc) => (
-            <button
-              key={cc.code}
-              type="button"
-              onClick={() => handleCodeChange(cc)}
-              className="w-full text-left px-4 py-2.5 hover:bg-gym-red/20 text-white text-sm flex items-center gap-2 border-b border-white/5 last:border-b-0 transition-colors"
-            >
-              <span className="text-base">{cc.flag}</span>
-              <span className="font-semibold">{cc.code}</span>
-              <span className="text-gym-gray text-xs ml-auto">{cc.country}</span>
-            </button>
-          ))}
+        <div className={`transition-all duration-200 flex items-center gap-1.5 pl-3 flex-shrink-0 ${badge ? 'opacity-100 w-auto pr-2 border-r border-white/10' : 'opacity-0 w-0 overflow-hidden'}`}>
+          {badge && (
+            <>
+              <span className="text-base leading-none">{badge.flag}</span>
+              <span className="text-white text-xs font-semibold">{badge.code}</span>
+            </>
+          )}
         </div>
+        <input
+          type="tel"
+          value={raw}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          className="flex-1 bg-transparent px-3 py-2.5 text-white text-sm focus:outline-none placeholder-gym-gray/60"
+          placeholder="+593 987 654 321 o 0998020967"
+        />
+      </div>
+      {error && (
+        <p className="text-red-400 text-xs">{error}</p>
       )}
-
-      <input
-        type="tel"
-        value={phoneNumber}
-        onChange={handlePhoneChange}
-        className="flex-1 bg-gym-black border border-white/10 rounded-lg rounded-l-none px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
-        placeholder="987654321"
-      />
     </div>
   )
 }
@@ -95,8 +113,9 @@ export default function Clientes() {
   const [highlightId, setHighlightId] = useState(null)
   const [partialPaymentAmount, setPartialPaymentAmount] = useState('')
   const [loadingPartialPayment, setLoadingPartialPayment] = useState(false)
+  const [dupErrors, setDupErrors] = useState({ email: null, telefono: null })
 
-  const { register, handleSubmit, reset, control, formState: { errors } } = useForm({
+  const { register, handleSubmit, reset, control, getValues, formState: { errors } } = useForm({
     defaultValues: {
       fechaInscripcion: new Date().toISOString().split('T')[0]
     }
@@ -136,88 +155,110 @@ export default function Clientes() {
 
   const onSubmit = async (formData) => {
     setSaving(true)
+    setDupErrors({ email: null, telefono: null })
+    let clienteCreado = null
     try {
-      // Ensure date is properly captured; use today's date if not provided
-      const fechaInscripcion = formData.fechaInscripcion && formData.fechaInscripcion.trim()
+      // Verificar duplicados antes de cualquier insert
+      const telefonoNorm = formData.telefono ? normalizePhone(formData.telefono) : null
+      const condiciones = [`email.eq.${formData.email}`]
+      if (telefonoNorm) condiciones.push(`telefono.eq.${telefonoNorm}`)
+
+      const { data: existentes } = await supabase
+        .from('clients')
+        .select('email, telefono')
+        .or(condiciones.join(','))
+
+      if (existentes?.length > 0) {
+        const newDupErrors = { email: null, telefono: null }
+        for (const dup of existentes) {
+          if (dup.email === formData.email)
+            newDupErrors.email = 'Ya existe un cliente registrado con este correo electrónico'
+          if (telefonoNorm && dup.telefono === telefonoNorm)
+            newDupErrors.telefono = 'Ya existe un cliente registrado con este número de teléfono'
+        }
+        setDupErrors(newDupErrors)
+        setSaving(false)
+        return
+      }
+
+      const fechaInscripcion = formData.fechaInscripcion?.trim()
         ? formData.fechaInscripcion
         : new Date().toISOString().split('T')[0]
       const tipoPago = formData.tipoPago || 'inscripcion_mensual'
       const descuento = Number(formData.descuento) || 0
 
-      // 1. Create client
+      // Pagos base con tipos válidos para el CHECK constraint de Supabase
+      // CHECK (tipo IN ('inscripcion', 'mensual', 'diario'))
+      const PAGOS_BASE = {
+        inscripcion_mensual: [{ tipo: 'inscripcion', monto: 5 }, { tipo: 'mensual', monto: 25 }],
+        solo_mensual:        [{ tipo: 'mensual', monto: 25 }],
+        solo_diario:         [{ tipo: 'diario', monto: 3 }],
+        solo_inscripcion:    [{ tipo: 'inscripcion', monto: 5 }],
+        sin_pago:            [],
+      }
+      const pagosBase = PAGOS_BASE[tipoPago] ?? []
+      const montoTotal = pagosBase.reduce((s, p) => s + p.monto, 0)
+      const descuentoAplicado = Math.min(descuento, montoTotal)
+      const montoFinal = montoTotal - descuentoAplicado
+
+      // Distribuir el descuento de primero a último (inscripción antes que mensual)
+      let pendiente = descuentoAplicado
+      const pagosFinales = pagosBase.map((p) => ({ ...p }))
+      for (let i = 0; i < pagosFinales.length && pendiente > 0; i++) {
+        const reduccion = Math.min(pendiente, pagosFinales[i].monto)
+        pagosFinales[i].monto -= reduccion
+        pendiente -= reduccion
+      }
+
+      // 1. Crear cliente
       const { data: client, error: clientError } = await supabase
         .from('clients')
         .insert({
           nombre: formData.nombre,
           apellido: formData.apellido,
           email: formData.email,
-          telefono: formData.telefono,
+          telefono: formData.telefono ? normalizePhone(formData.telefono) : null,
           fecha_inscripcion: fechaInscripcion,
-          estado: 'activo'
+          estado: 'activo',
         })
         .select()
         .single()
-      if (clientError) throw clientError
-
-      // 2. Create payment(s) based on type
-      const pagosACrear = []
-      let montoTotal = 0
-      let notasTotal = []
-
-      if (tipoPago === 'inscripcion_mensual') {
-        pagosACrear.push({ tipo: 'inscripcion', monto: 5 })
-        pagosACrear.push({ tipo: 'mensual', monto: 25 })
-        montoTotal = 30
-        notasTotal = ['Inscripción $5', 'Primer mes $25']
-      } else if (tipoPago === 'solo_mensual') {
-        pagosACrear.push({ tipo: 'mensual', monto: 25 })
-        montoTotal = 25
-        notasTotal = ['Primer mes $25']
-      } else if (tipoPago === 'solo_diario') {
-        pagosACrear.push({ tipo: 'diario', monto: 3 })
-        montoTotal = 3
-        notasTotal = ['Pago diario $3']
-      } else if (tipoPago === 'solo_inscripcion') {
-        pagosACrear.push({ tipo: 'inscripcion', monto: 5 })
-        montoTotal = 5
-        notasTotal = ['Inscripción $5']
+      if (clientError) throw {
+        tipo: 'cliente',
+        error: clientError,
+        mensaje: clientError.code === '23505'
+          ? 'Ya existe un cliente registrado con ese correo electrónico.'
+          : 'Error al registrar cliente. Verifica los datos.',
       }
+      clienteCreado = client
 
-      // Apply discount by creating a negative payment (this will automatically reduce totals everywhere)
-      const montoFinal = Math.max(0, montoTotal - descuento)
+      // 2. Insertar pagos con montos ya descontados
+      if (pagosFinales.length > 0) {
+        const notasBase = pagosBase
+          .map((p) => `${p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1)} $${p.monto.toFixed(2)}`)
+          .join(' + ')
+        const notasDescuento = descuentoAplicado > 0
+          ? ` — desc. -$${descuentoAplicado.toFixed(2)} → cobra $${montoFinal.toFixed(2)}`
+          : ''
+        const notas = notasBase + notasDescuento
 
-      // Insert all payments
-      if (pagosACrear.length > 0) {
-        const pagosParaInsert = pagosACrear.map((pago) => ({
+        const pagosParaInsert = pagosFinales.map((p) => ({
           client_id: client.id,
-          tipo: pago.tipo,
-          monto: pago.monto,
+          tipo: p.tipo,
+          monto: p.monto,
           fecha_pago: fechaInscripcion,
           mes_correspondiente: fechaInscripcion.substring(0, 7),
-          notas: notasTotal.join(' + '),
+          notas,
         }))
 
-        // Add discount as a negative payment if discount exists
-        if (descuento > 0) {
-          pagosParaInsert.push({
-            client_id: client.id,
-            tipo: 'descuento',
-            monto: -descuento, // Negative amount to reduce totals
-            fecha_pago: fechaInscripcion,
-            mes_correspondiente: fechaInscripcion.substring(0, 7),
-            notas: `Descuento aplicado -$${descuento.toFixed(2)}`,
-          })
-        }
-
         const { error: pagoError } = await supabase.from('payments').insert(pagosParaInsert)
-        if (pagoError) throw pagoError
+        if (pagoError) throw { tipo: 'pago', error: pagoError }
       }
 
-      // 3. Create membership if includes 'mensual'
+      // 3. Crear membresía si corresponde
       if (tipoPago === 'inscripcion_mensual' || tipoPago === 'solo_mensual') {
         const vencimiento = new Date(fechaInscripcion)
         vencimiento.setMonth(vencimiento.getMonth() + 1)
-
         await supabase.from('memberships').insert({
           client_id: client.id,
           tipo: 'mensual',
@@ -227,16 +268,29 @@ export default function Clientes() {
         })
       }
 
-      const mensajeExito = montoFinal > 0
+      // 4. Primera asistencia: el día de inscripción cuenta como primera visita
+      await supabase.from('attendance').insert({
+        client_id: client.id,
+        fecha: fechaInscripcion,
+        hora: '08:00',
+      })
+
+      const mensaje = montoFinal > 0
         ? `✅ Cliente registrado — $${montoFinal.toFixed(2)} cobrado`
         : '✅ Cliente registrado sin pago inicial'
-
-      toast.success(mensajeExito)
+      toast.success(mensaje)
       reset()
-      setShowModal(false)
+      setTimeout(() => setShowModal(false), 1500)
       fetchClients()
     } catch (err) {
-      toast.error(err.message || 'Error al registrar cliente')
+      if (err?.tipo === 'pago') {
+        toast.error('Cliente registrado pero hubo un error al generar el pago. Contacta al administrador.')
+        // El cliente ya fue creado, no se puede hacer rollback automático en Supabase JS
+        // Se notifica para revisión manual
+      } else {
+        toast.error(err?.mensaje || 'Error al registrar cliente. Verifica los datos.')
+      }
+      console.error(err?.error ?? err)
     }
     setSaving(false)
   }
@@ -325,7 +379,7 @@ export default function Clientes() {
           <p className="text-gym-gray text-xs sm:text-sm mt-1">{clients.length} registrados</p>
         </div>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => { setShowModal(true); setDupErrors({ email: null, telefono: null }) }}
           className="flex items-center justify-center sm:justify-start gap-2 bg-gym-red hover:bg-gym-red-hover text-white font-bold px-4 sm:px-5 py-2 sm:py-2.5 rounded-lg sm:rounded-xl btn-interactive text-sm sm:text-base"
         >
           <Plus className="w-4 h-4 flex-shrink-0" />
@@ -467,7 +521,7 @@ export default function Clientes() {
           <div className="bg-gym-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-white font-bold text-lg">Nuevo Cliente</h3>
-              <button onClick={() => { setShowModal(false); reset() }} className="text-gym-gray hover:text-white">
+              <button onClick={() => { setShowModal(false); reset(); setDupErrors({ email: null, telefono: null }) }} className="text-gym-gray hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -493,18 +547,38 @@ export default function Clientes() {
               <div>
                 <label className="block text-gym-gray text-xs mb-1">Correo electrónico</label>
                 <input
-                  {...register('email', { required: true })}
+                  {...register('email', { required: true, onChange: () => setDupErrors((p) => ({ ...p, email: null })) })}
                   type="email"
-                  className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
+                  className={`w-full bg-gym-black border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red ${dupErrors.email ? 'border-red-500' : 'border-white/10'}`}
                   placeholder="juan@email.com"
                 />
+                {dupErrors.email && (
+                  <p className="text-red-400 text-xs mt-1">{dupErrors.email}</p>
+                )}
               </div>
               <div>
                 <label className="block text-gym-gray text-xs mb-1">Teléfono (opcional)</label>
                 <Controller
                   name="telefono"
                   control={control}
-                  render={({ field }) => <PhoneInputWithCode field={field} />}
+                  rules={{
+                    validate: (v) => {
+                      if (!v || v.trim() === '') return true
+                      const normalized = normalizePhone(v)
+                      return isValidPhoneNumber(normalized)
+                        ? true
+                        : 'Número de teléfono inválido. Si eres de Ecuador escribe: 0998020967 o con prefijo internacional: +593998020967'
+                    },
+                  }}
+                  render={({ field, fieldState }) => (
+                    <PhoneInputWithCode
+                      field={{
+                        ...field,
+                        onChange: (v) => { field.onChange(v); setDupErrors((p) => ({ ...p, telefono: null })) },
+                      }}
+                      error={fieldState.error?.message || dupErrors.telefono}
+                    />
+                  )}
                 />
               </div>
 
@@ -546,13 +620,31 @@ export default function Clientes() {
               <div>
                 <label className="block text-gym-gray text-xs mb-1">Descuento ($)</label>
                 <input
-                  {...register('descuento')}
+                  {...register('descuento', {
+                    validate: (v) => {
+                      const monto = Number(v) || 0
+                      if (monto === 0) return true
+                      const TOTALES = {
+                        inscripcion_mensual: 30,
+                        solo_mensual: 25,
+                        solo_diario: 3,
+                        solo_inscripcion: 5,
+                        sin_pago: 0,
+                      }
+                      const tipoPago = getValues('tipoPago') || 'inscripcion_mensual'
+                      const total = TOTALES[tipoPago] ?? 0
+                      return monto <= total || `El descuento no puede superar el total de $${total.toFixed(2)}`
+                    },
+                  })}
                   type="number"
                   step="0.01"
                   min="0"
-                  className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
+                  className={`w-full bg-gym-black border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red ${errors.descuento ? 'border-red-500' : 'border-white/10'}`}
                   placeholder="0.00"
                 />
+                {errors.descuento && (
+                  <p className="text-red-400 text-xs mt-1">{errors.descuento.message}</p>
+                )}
               </div>
 
               <button

@@ -46,6 +46,7 @@ export default function Asistencia() {
   const [dailyTrend, setDailyTrend] = useState([])
   const [hourlyData, setHourlyData] = useState([])
   const [inactiveClients, setInactiveClients] = useState({ warning: [], danger: [] })
+  const [lastAttendanceMap, setLastAttendanceMap] = useState({})
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [marking, setMarking] = useState(null)
@@ -74,36 +75,63 @@ export default function Asistencia() {
   const fetchAllData = async () => {
     setLoading(true)
     try {
-      const [clientsRes, attendanceRes] = await Promise.all([
-          supabase.from('clients').select('id, nombre, apellido, estado').eq('estado', 'activo'),
-          supabase
-            .from('attendance')
-            .select('*, clients(nombre, apellido)')
-            .eq('fecha', format(today, 'yyyy-MM-dd'))
-            .order('hora', { ascending: false }),
-        ])
-
-        const activeClients = clientsRes.data || []
-        setClients(activeClients)
-        setTodayLog(attendanceRes.data || [])
-
-        // Historial del mes
-        const monthStart = startOfMonth(today).toISOString()
-        const monthEnd = endOfMonth(today).toISOString()
-        const { data: monthData } = await supabase
+      const [clientsRes, attendanceRes, allAttendanceRes] = await Promise.all([
+        supabase
+          .from('clients')
+          .select('id, nombre, apellido, estado, fecha_inscripcion, telefono')
+          .eq('estado', 'activo'),
+        supabase
           .from('attendance')
           .select('*, clients(nombre, apellido)')
-          .gte('fecha', monthStart)
-          .lte('fecha', monthEnd)
+          .eq('fecha', format(today, 'yyyy-MM-dd'))
+          .order('hora', { ascending: false }),
+        supabase
+          .from('attendance')
+          .select('client_id, fecha')
+          .order('fecha', { ascending: false }),
+      ])
 
-        const grouped = {}
-        ;(monthData || []).forEach((record) => {
-          if (!grouped[record.fecha]) grouped[record.fecha] = []
-          grouped[record.fecha].push(record)
-        })
-        setMonthAttendance(grouped)
+      const activeClients = clientsRes.data || []
+      setClients(activeClients)
+      setTodayLog(attendanceRes.data || [])
 
-        recalculateMetrics(activeClients, attendanceRes.data || [])
+      // Construir mapa client_id → fecha más reciente (all-time)
+      const lastMap = {}
+      for (const record of allAttendanceRes.data || []) {
+        if (!lastMap[record.client_id]) lastMap[record.client_id] = record.fecha
+      }
+
+      // Backfill: clientes activos sin ningún registro de asistencia
+      const sinAsistencia = activeClients.filter((c) => !lastMap[c.id])
+      if (sinAsistencia.length > 0) {
+        const backfillRecords = sinAsistencia.map((c) => ({
+          client_id: c.id,
+          fecha: c.fecha_inscripcion,
+          hora: '08:00',
+        }))
+        await supabase.from('attendance').insert(backfillRecords)
+        for (const c of sinAsistencia) lastMap[c.id] = c.fecha_inscripcion
+      }
+
+      setLastAttendanceMap(lastMap)
+
+      // Historial del mes
+      const monthStart = startOfMonth(today).toISOString()
+      const monthEnd = endOfMonth(today).toISOString()
+      const { data: monthData } = await supabase
+        .from('attendance')
+        .select('*, clients(nombre, apellido)')
+        .gte('fecha', monthStart)
+        .lte('fecha', monthEnd)
+
+      const grouped = {}
+      ;(monthData || []).forEach((record) => {
+        if (!grouped[record.fecha]) grouped[record.fecha] = []
+        grouped[record.fecha].push(record)
+      })
+      setMonthAttendance(grouped)
+
+      recalculateMetrics(activeClients, attendanceRes.data || [], lastMap)
     } catch (err) {
       toast.error('Error al cargar datos')
       console.error(err)
@@ -112,17 +140,14 @@ export default function Asistencia() {
     }
   }
 
-  const recalculateMetrics = (activeClients, todayData) => {
-    // Tendencia del mes actual (día 1 hasta hoy)
+  const recalculateMetrics = (activeClients, todayData, lastMap) => {
     const trend = calculateCurrentMonthTrend()
     setDailyTrend(trend)
 
-    // Datos por hora del día de hoy
     const hourly = calculateHourlyData()
     setHourlyData(hourly)
 
-    // Clientes inactivos
-    const inactive = calculateInactiveClients()
+    const inactive = calculateInactiveClients(lastMap ?? lastAttendanceMap)
     setInactiveClients(inactive)
   }
 
@@ -156,24 +181,24 @@ export default function Asistencia() {
     })
   }
 
-  const calculateInactiveClients = () => {
+  const calculateInactiveClients = (lastMap) => {
     const warning = []
     const danger = []
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
 
     clients.forEach((client) => {
-      const lastAttendance = Object.keys(monthAttendance)
-        .reverse()
-        .find((dateKey) => monthAttendance[dateKey].some((a) => a.client_id === client.id))
+      const lastFecha = lastMap?.[client.id]
+      if (!lastFecha) return // sin registro: cliente nuevo sin datos aún, omitir
 
-      if (!lastAttendance) {
-        danger.push({ ...client, daysSince: 999 })
-      } else {
-        const daysSince = Math.floor((today - new Date(lastAttendance)) / (1000 * 60 * 60 * 24))
-        if (daysSince >= 15) {
-          danger.push({ ...client, daysSince })
-        } else if (daysSince >= 7) {
-          warning.push({ ...client, daysSince })
-        }
+      const lastDate = new Date(lastFecha)
+      lastDate.setHours(0, 0, 0, 0)
+      const daysSince = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24))
+
+      if (daysSince >= 15) {
+        danger.push({ ...client, daysSince })
+      } else if (daysSince >= 7) {
+        warning.push({ ...client, daysSince })
       }
     })
 

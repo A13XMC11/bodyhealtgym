@@ -5,10 +5,10 @@ import toast from 'react-hot-toast'
 import { MapPin, Phone, Clock, Mail, Loader } from 'lucide-react'
 
 const info = [
-  { icon: MapPin, label: 'Dirección', value: 'Av. Principal #123, Ciudad' },
-  { icon: Phone, label: 'Teléfono', value: '+1 (555) 123-4567' },
+  { icon: MapPin, label: 'Dirección', value: 'Humberto Albornoz' },
+  { icon: Phone, label: 'Teléfono', value: '+593983048841' },
   { icon: Mail, label: 'Email', value: 'info@bodyhealthgym.com' },
-  { icon: Clock, label: 'Horario', value: 'Lun–Sáb: 5am–10pm | Dom: 7am–3pm' },
+  { icon: Clock, label: 'Horario', value: 'Lun - Vie: 5am–9pm | Sáb: 6am–12pm' },
 ]
 
 const validateEmail = (email) => {

@@ -60,7 +60,9 @@ export default function Reportes() {
       setClients(clientsRes.data || [])
     } catch (err) {
       toast.error('Error al cargar reportes')
-      console.error(err)
+      if (import.meta.env.DEV) {
+        console.error(err)
+      }
     } finally {
       setLoading(false)
     }

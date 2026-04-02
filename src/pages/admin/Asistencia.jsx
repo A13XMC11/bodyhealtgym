@@ -135,7 +135,9 @@ export default function Asistencia() {
       recalculateMetrics(activeClients, attendanceRes.data || [], lastMap)
     } catch (err) {
       toast.error('Error al cargar datos')
-      console.error(err)
+      if (import.meta.env.DEV) {
+        console.error(err)
+      }
     } finally {
       setLoading(false)
     }
@@ -225,7 +227,9 @@ export default function Asistencia() {
       toast.success(`✓ ${client.nombre} registrado - Entrada`)
     } catch (err) {
       toast.error('Error al marcar entrada')
-      console.error(err)
+      if (import.meta.env.DEV) {
+        console.error(err)
+      }
     } finally {
       setMarking(null)
     }
@@ -248,7 +252,9 @@ export default function Asistencia() {
       toast.success(`✓ ${client.nombre} registrado - Salida`)
     } catch (err) {
       toast.error('Error al marcar salida')
-      console.error(err)
+      if (import.meta.env.DEV) {
+        console.error(err)
+      }
     } finally {
       setMarking(null)
     }

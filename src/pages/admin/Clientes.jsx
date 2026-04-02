@@ -147,7 +147,7 @@ export default function Clientes() {
   const fetchClients = async () => {
     setLoading(true)
     const [clientsRes, membershipsRes] = await Promise.all([
-      supabase.from('clients').select('*').order('fecha_inscripcion', { ascending: false }),
+      supabase.from('clients').select('id, nombre, apellido, email, telefono, estado, fecha_inscripcion').order('fecha_inscripcion', { ascending: false }),
       supabase.from('memberships').select('client_id, fecha_vencimiento, estado').order('fecha_vencimiento', { ascending: false }),
     ])
     if (clientsRes.error) toast.error('Error al cargar clientes')
@@ -324,7 +324,7 @@ export default function Clientes() {
         .order('fecha_pago', { ascending: false }),
       supabase
         .from('attendance')
-        .select('*')
+        .select('id, client_id, fecha, hora, hora_salida')
         .eq('client_id', client.id)
         .order('fecha', { ascending: false }),
     ])

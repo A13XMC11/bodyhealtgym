@@ -34,7 +34,9 @@ export default function AdminHeader({ onMenuClick, isSidebarOpen }) {
         setResults(data || [])
         setIsOpen(true)
       } catch (err) {
-        console.error('Search error:', err)
+        if (import.meta.env.DEV) {
+          console.error('Search error:', err)
+        }
       }
     }, 300)
 

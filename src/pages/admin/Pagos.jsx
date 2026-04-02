@@ -126,7 +126,7 @@ export default function Pagos() {
     const [pagosRes, clientesRes, promosRes] = await Promise.all([
       supabase.from('payments').select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)').order('fecha_pago', { ascending: false }),
       supabase.from('clients').select('id, nombre, apellido').eq('estado', 'activo'),
-      supabase.from('promotions').select('*').eq('activa', true),
+      supabase.from('promotions').select('id, nombre, tipo, valor, activa').eq('activa', true),
     ])
     setPagos(pagosRes.data || [])
     setClientes(clientesRes.data || [])

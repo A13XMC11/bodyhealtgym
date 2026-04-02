@@ -28,26 +28,58 @@ const validateMensaje = (mensaje) => {
 
 export default function Contacto() {
   const [sending, setSending] = useState(false)
+  const [lastSentTime, setLastSentTime] = useState(null)
+  const COOLDOWN_MS = 60_000 // 1 minuto entre envíos
+  const isDev = import.meta.env.DEV
+
   const { register, handleSubmit, reset, formState: { errors } } = useForm({
     mode: 'onChange',
   })
 
   const onSubmit = async (formData) => {
+    // Validar rate limiting
+    if (lastSentTime && Date.now() - lastSentTime < COOLDOWN_MS) {
+      const secsLeft = Math.ceil((COOLDOWN_MS - (Date.now() - lastSentTime)) / 1000)
+      toast.error(`Espera ${secsLeft} segundos antes de enviar otro mensaje`)
+      return
+    }
+
+    // Validar longitud máxima antes del insert
+    const nombre = formData.nombre.trim()
+    const email = formData.email.trim()
+    const mensaje = formData.mensaje.trim()
+
+    if (nombre.length > 100) {
+      toast.error('El nombre es demasiado largo (máx. 100 caracteres)')
+      return
+    }
+    if (email.length > 255) {
+      toast.error('El email es demasiado largo')
+      return
+    }
+    if (mensaje.length > 2000) {
+      toast.error('El mensaje es demasiado largo (máx. 2000 caracteres)')
+      return
+    }
+
     setSending(true)
     try {
       const { error } = await supabase.from('contact_messages').insert({
-        nombre: formData.nombre.trim(),
-        email: formData.email.trim(),
-        mensaje: formData.mensaje.trim(),
+        nombre: nombre.slice(0, 100),
+        email: email.slice(0, 255),
+        mensaje: mensaje.slice(0, 2000),
       })
 
       if (error) throw error
 
+      setLastSentTime(Date.now())
       toast.success('✅ Mensaje enviado correctamente')
       reset()
     } catch (err) {
+      if (isDev) {
+        console.error('[DEV ONLY]', err)
+      }
       toast.error('❌ Error al enviar, intenta de nuevo')
-      console.error(err)
     } finally {
       setSending(false)
     }
@@ -86,10 +118,12 @@ export default function Contacto() {
                 <input
                   type="text"
                   placeholder="Tu nombre"
+                  maxLength="100"
                   {...register('nombre', {
                     required: 'El nombre es requerido',
                     validate: {
                       minLength: (v) => (v.trim().length >= 3) || 'Mínimo 3 caracteres',
+                      maxLength: (v) => (v.trim().length <= 100) || 'Máximo 100 caracteres',
                       noOnlySpaces: (v) => (v.trim().length > 0) || 'El nombre no puede estar vacío',
                     },
                   })}
@@ -107,11 +141,13 @@ export default function Contacto() {
                 <input
                   type="email"
                   placeholder="Tu correo"
+                  maxLength="255"
                   {...register('email', {
                     required: 'El email es requerido',
                     validate: {
                       validEmail: (v) => validateEmail(v.trim()) || 'Email inválido (debe incluir @ y dominio)',
                       noSpaces: (v) => !v.includes(' ') || 'El email no puede contener espacios',
+                      maxLength: (v) => (v.length <= 255) || 'Email demasiado largo',
                     },
                   })}
                   className={`w-full bg-gym-dark border rounded-lg px-4 py-3 text-white placeholder-gym-gray focus:outline-none transition-colors ${
@@ -128,10 +164,12 @@ export default function Contacto() {
                 <textarea
                   rows={4}
                   placeholder="Tu mensaje..."
+                  maxLength="2000"
                   {...register('mensaje', {
                     required: 'El mensaje es requerido',
                     validate: {
                       minLength: (v) => (v.trim().length >= 10) || 'Mínimo 10 caracteres',
+                      maxLength: (v) => (v.trim().length <= 2000) || 'Máximo 2000 caracteres',
                       noOnlySpaces: (v) => (v.trim().length > 0) || 'El mensaje no puede estar vacío',
                     },
                   })}

@@ -32,28 +32,32 @@ export default function Pagos() {
   const [selectedPromo, setSelectedPromo] = useState(null)
   const [montoCalculado, setMontoCalculado] = useState(0)
   const [filtroTipo, setFiltroTipo] = useState('')
-  const [precioBase, setPrecioBase] = useState(PRECIOS_BASE.mensual)
   const [clienteEstado, setClienteEstado] = useState(null)
   const [checkingCliente, setCheckingCliente] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue } = useForm({
-    defaultValues: { tipo: 'mensual', precio_diario: 3 }
+    defaultValues: { tipo: 'mensual', precio_diario: 3, descuento: 0 }
   })
 
   const tipoWatch = watch('tipo')
   const promoWatch = watch('promocion_id')
   const precioDiario = watch('precio_diario')
   const clientWatch = watch('client_id')
+  const descuentoWatch = watch('descuento')
+
+  const descuento = Math.max(0, Number(descuentoWatch) || 0)
+  const montoFinal = Math.max(0, montoCalculado - descuento)
+  const descuentoError = descuento > montoCalculado
 
   useEffect(() => { fetchAll() }, [user])
 
   useEffect(() => {
     let base = PRECIOS_BASE[tipoWatch] ?? Number(precioDiario) ?? 3
     if (tipoWatch === 'diario') base = Number(precioDiario) || 3
-    setPrecioBase(base)
     const promo = promociones.find((p) => p.id === promoWatch)
     setSelectedPromo(promo || null)
     setMontoCalculado(calcularMonto(tipoWatch, promo, base))
+    setValue('descuento', 0)
   }, [tipoWatch, promoWatch, precioDiario, promociones])
 
   useEffect(() => {
@@ -152,16 +156,25 @@ export default function Pagos() {
         return
       }
 
+      const desc = Math.max(0, Number(formData.descuento) || 0)
+      if (desc > montoCalculado) {
+        toast.error('El descuento no puede ser mayor al monto total')
+        setSaving(false)
+        return
+      }
+
       const promo = promociones.find((p) => p.id === formData.promocion_id)
       let base = PRECIOS_BASE[formData.tipo] ?? 3
       if (formData.tipo === 'diario') base = Number(formData.precio_diario) || 3
-      const monto = calcularMonto(formData.tipo, promo, base)
+      const montoOriginal = calcularMonto(formData.tipo, promo, base)
+      const monto = Math.max(0, montoOriginal - desc)
       const today = fechaHoy()
 
       await supabase.from('payments').insert({
         client_id: formData.client_id,
         tipo: formData.tipo,
         monto,
+        descuento: desc > 0 ? desc : null,
         fecha_pago: today,
         mes_correspondiente: mesHoy(),
         promocion_id: formData.promocion_id || null,
@@ -180,7 +193,7 @@ export default function Pagos() {
         }, { onConflict: 'client_id' })
       }
 
-      toast.success(`Pago registrado — $${monto.toFixed(2)}`)
+      toast.success(`Pago registrado — $${monto.toFixed(2)}${desc > 0 ? ` (desc. $${desc.toFixed(2)})` : ''}`)
       reset()
       setShowModal(false)
       fetchAll()
@@ -418,27 +431,45 @@ export default function Pagos() {
                 </select>
               </div>
               <div>
+                <label className="block text-gym-gray text-xs mb-1">Descuento ($)</label>
+                <input
+                  {...register('descuento')}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className={`w-full bg-gym-black border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none transition-colors ${descuentoError ? 'border-red-500 focus:border-red-500' : 'border-white/10 focus:border-gym-red'}`}
+                  placeholder="0.00"
+                />
+                {descuentoError && (
+                  <p className="text-red-400 text-xs mt-1">El descuento no puede ser mayor al monto total</p>
+                )}
+              </div>
+
+              <div>
                 <label className="block text-gym-gray text-xs mb-1">Notas (opcional)</label>
                 <input {...register('notas')}
                   className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
                   placeholder="Observaciones..." />
               </div>
 
-              {/* Monto calculado */}
-              <div className="bg-gym-black border border-gym-red/30 rounded-xl p-4 flex items-center justify-between">
-                <div>
-                  <div className="text-gym-gray text-xs">Precio base</div>
-                  <div className="text-white text-sm font-semibold">${precioBase.toFixed(2)}</div>
+              {/* Resumen de pago */}
+              <div className="bg-gym-black border border-gym-red/30 rounded-xl p-4 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gym-gray">Monto original</span>
+                  <span className="text-white font-medium">
+                    ${montoCalculado.toFixed(2)}
+                    {selectedPromo && <span className="text-gym-red text-xs ml-1">({selectedPromo.nombre})</span>}
+                  </span>
                 </div>
-                {selectedPromo && (
-                  <div className="text-center">
-                    <div className="text-gym-gray text-xs">Promoción</div>
-                    <div className="text-gym-red text-sm font-semibold">{selectedPromo.nombre}</div>
+                {descuento > 0 && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gym-gray">Descuento</span>
+                    <span className="text-yellow-400 font-medium">−${descuento.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="text-right">
-                  <div className="text-gym-gray text-xs">Total a cobrar</div>
-                  <div className="text-gym-red text-2xl font-black">${montoCalculado.toFixed(2)}</div>
+                <div className="border-t border-white/10 pt-2 flex items-center justify-between">
+                  <span className="text-gym-gray text-xs font-semibold uppercase tracking-wide">Total a pagar</span>
+                  <span className="text-gym-red text-2xl font-black">${montoFinal.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -447,13 +478,14 @@ export default function Pagos() {
                 disabled={
                   saving ||
                   checkingCliente ||
+                  descuentoError ||
                   (clienteEstado?.bloqueoMensual && tipoWatch === 'mensual') ||
                   (clienteEstado?.bloqueoMensual && tipoWatch === 'diario') ||
                   (clienteEstado?.tieneInscripcion && tipoWatch === 'inscripcion')
                 }
                 className="w-full bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-3 rounded-xl btn-interactive"
               >
-                {saving ? 'Guardando...' : checkingCliente ? 'Verificando...' : `Registrar — $${montoCalculado.toFixed(2)}`}
+                {saving ? 'Guardando...' : checkingCliente ? 'Verificando...' : `Registrar — $${montoFinal.toFixed(2)}`}
               </button>
             </form>
           </div>

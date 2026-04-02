@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subDays, startOfYear, endOfYear, eachMonthOfInterval } from 'date-fns'
 import { es } from 'date-fns/locale'
-import { DollarSign, FileDown, Users, TrendingUp, BarChart2 } from 'lucide-react'
+import { DollarSign, FileDown, Users, TrendingUp, BarChart2, Calendar, X } from 'lucide-react'
 
 
 const today = new Date()
@@ -30,16 +30,29 @@ export default function Reportes() {
   const [payments, setPayments] = useState([])
   const [clients, setClients] = useState([])
   const [loading, setLoading] = useState(true)
+  const [fechaDesde, setFechaDesde] = useState('')
+  const [fechaHasta, setFechaHasta] = useState('')
+  const [filtroActivo, setFiltroActivo] = useState({ desde: '', hasta: '' })
+  const [fechaError, setFechaError] = useState('')
+
+  const todayStr = format(today, 'yyyy-MM-dd')
 
   useEffect(() => {
-    fetchData()
-  }, [activeTab])
+    fetchData(filtroActivo.desde, filtroActivo.hasta)
+  }, [activeTab, filtroActivo])
 
-  const fetchData = async () => {
+  const fetchData = async (desde = '', hasta = '') => {
     setLoading(true)
     try {
+      let paymentsQuery = supabase
+        .from('payments')
+        .select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)')
+
+      if (desde) paymentsQuery = paymentsQuery.gte('fecha_pago', desde)
+      if (hasta) paymentsQuery = paymentsQuery.lte('fecha_pago', hasta)
+
       const [paymentsRes, clientsRes] = await Promise.all([
-        supabase.from('payments').select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)'),
+        paymentsQuery,
         supabase.from('clients').select('id, nombre, apellido, estado'),
       ])
 
@@ -52,6 +65,24 @@ export default function Reportes() {
       setLoading(false)
     }
   }
+
+  const handleFiltrar = () => {
+    if (fechaHasta && fechaDesde && fechaHasta < fechaDesde) {
+      setFechaError('La fecha final no puede ser menor a la fecha inicial')
+      return
+    }
+    setFechaError('')
+    setFiltroActivo({ desde: fechaDesde, hasta: fechaHasta })
+  }
+
+  const handleLimpiar = () => {
+    setFechaDesde('')
+    setFechaHasta('')
+    setFechaError('')
+    setFiltroActivo({ desde: '', hasta: '' })
+  }
+
+  const hayFiltroActivo = filtroActivo.desde || filtroActivo.hasta
 
   const reportData = useMemo(() => {
     // Total ingresos ANUALES (enero - diciembre del año actual)
@@ -286,15 +317,7 @@ export default function Reportes() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-4 border-gym-red border-t-transparent rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  const hasChartData = reportData.chartData.some((d) => d.ingresos > 0)
+  const hasChartData = !loading && reportData.chartData.some((d) => d.ingresos > 0)
 
   return (
     <div className="space-y-4 sm:space-y-6">
@@ -332,6 +355,63 @@ export default function Reportes() {
         ))}
       </div>
 
+      {/* Date Range Filter */}
+      <div className="bg-gym-dark border border-white/5 rounded-xl p-3 sm:p-4 space-y-3">
+        <div className="flex items-center gap-2 text-gym-gray text-xs font-semibold uppercase tracking-wide">
+          <Calendar className="w-3.5 h-3.5" />
+          Filtrar por rango de fechas
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+          <div className="flex-1">
+            <label className="block text-gym-gray text-xs mb-1">Fecha desde</label>
+            <input
+              type="date"
+              value={fechaDesde}
+              max={todayStr}
+              onChange={(e) => { setFechaDesde(e.target.value); setFechaError('') }}
+              className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-gym-red [color-scheme:dark]"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-gym-gray text-xs mb-1">Fecha hasta</label>
+            <input
+              type="date"
+              value={fechaHasta}
+              max={todayStr}
+              onChange={(e) => { setFechaHasta(e.target.value); setFechaError('') }}
+              className={`w-full bg-gym-black border rounded-lg px-3 py-2 text-white text-sm focus:outline-none [color-scheme:dark] ${fechaError ? 'border-red-500 focus:border-red-500' : 'border-white/10 focus:border-gym-red'}`}
+            />
+          </div>
+          <div className="flex gap-2 sm:items-end">
+            <button
+              onClick={handleFiltrar}
+              className="flex-1 sm:flex-none bg-gym-red hover:bg-gym-red-hover text-white font-bold px-4 py-2 rounded-lg text-sm btn-interactive"
+            >
+              Filtrar
+            </button>
+            {hayFiltroActivo && (
+              <button
+                onClick={handleLimpiar}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 bg-white/5 hover:bg-white/10 text-gym-gray hover:text-white font-medium px-3 py-2 rounded-lg text-sm transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+                Limpiar
+              </button>
+            )}
+          </div>
+        </div>
+        {fechaError && (
+          <p className="text-red-400 text-xs">{fechaError}</p>
+        )}
+        {hayFiltroActivo && !fechaError && (
+          <p className="text-gym-gray text-xs">
+            Mostrando resultados
+            {filtroActivo.desde && ` desde ${format(new Date(filtroActivo.desde + 'T00:00:00'), 'd MMM yyyy', { locale: es })}`}
+            {filtroActivo.hasta && ` hasta ${format(new Date(filtroActivo.hasta + 'T00:00:00'), 'd MMM yyyy', { locale: es })}`}
+          </p>
+        )}
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4">
         <div className="bg-gym-dark border border-white/5 rounded-lg sm:rounded-2xl p-2.5 sm:p-5">
@@ -363,7 +443,11 @@ export default function Reportes() {
       <div className="bg-gym-dark border border-white/5 rounded-lg sm:rounded-2xl p-3 sm:p-6 overflow-x-auto">
         <h3 className="text-white font-bold text-sm sm:text-base mb-3 sm:mb-6">{getChartTitle()}</h3>
 
-        {hasChartData ? (
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-8 h-8 border-4 border-gym-red border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : hasChartData ? (
           <div className="min-h-[200px] sm:min-h-[300px] w-full">
             <ResponsiveContainer width="100%" height={typeof window !== 'undefined' && window.innerWidth < 640 ? 200 : 300}>
               <BarChart data={reportData.chartData}>
@@ -399,7 +483,13 @@ export default function Reportes() {
             </ResponsiveContainer>
           </div>
         ) : (
-          <EmptyChart label={`Sin ingresos registrados ${activeTab === 'diario' ? 'hoy' : activeTab === 'semanal' ? 'esta semana' : 'este mes'}`} />
+          <EmptyChart
+            label={
+              hayFiltroActivo && payments.length === 0
+                ? 'No se encontraron registros en este rango de fechas'
+                : `Sin ingresos registrados ${activeTab === 'diario' ? 'hoy' : activeTab === 'semanal' ? 'esta semana' : 'este mes'}`
+            }
+          />
         )}
       </div>
 

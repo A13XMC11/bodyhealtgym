@@ -196,9 +196,9 @@ export default function Asistencia() {
       const lastDate = parseFechaLocal(lastFecha)
       const daysSince = Math.floor((now - lastDate) / (1000 * 60 * 60 * 24))
 
-      if (daysSince >= 15) {
+      if (daysSince >= 21) {
         danger.push({ ...client, daysSince })
-      } else if (daysSince >= 7) {
+      } else if (daysSince >= 10) {
         warning.push({ ...client, daysSince })
       }
     })
@@ -618,7 +618,7 @@ export default function Asistencia() {
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-4">
                 <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
-                <h4 className="text-yellow-400 font-bold">Sin asistir hace 7-14 días</h4>
+                <h4 className="text-yellow-400 font-bold">Sin asistir hace 10-20 días</h4>
               </div>
               <div className="space-y-2">
                 {inactiveClients.warning.map((client) => (
@@ -633,7 +633,7 @@ export default function Asistencia() {
                       onClick={() =>
                         sendWhatsApp(
                           client.telefono,
-                          `Hola ${client.nombre}, te echamos de menos en Body Health Gym. ¡Te esperamos!`
+                          `Hola ${client.nombre}, hace unos días que no te vemos en Body Health Gym. ¡Te esperamos!`
                         )
                       }
                       disabled={!client.telefono}
@@ -652,7 +652,7 @@ export default function Asistencia() {
             <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6">
               <div className="flex items-center gap-3 mb-4">
                 <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
-                <h4 className="text-red-400 font-bold">Sin asistir hace 15+ días</h4>
+                <h4 className="text-red-400 font-bold">Sin asistir hace 21+ días</h4>
               </div>
               <div className="space-y-2">
                 {inactiveClients.danger.map((client) => (
@@ -667,7 +667,7 @@ export default function Asistencia() {
                       onClick={() =>
                         sendWhatsApp(
                           client.telefono,
-                          `Hola ${client.nombre}, te echamos de menos en Body Health Gym. ¡Te esperamos!`
+                          `Hola ${client.nombre}, te echamos mucho de menos en Body Health Gym. ¿Todo bien? ¡Vuelve pronto!`
                         )
                       }
                       disabled={!client.telefono}

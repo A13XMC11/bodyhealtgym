@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { Users, DollarSign, AlertCircle, ClipboardList, AlertTriangle, MessageCircle } from 'lucide-react'
+import { Users, DollarSign, AlertCircle, AlertTriangle, MessageCircle } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { format, subMonths, startOfMonth, endOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -12,7 +12,6 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState({ activos: 0, ingresos: 0, pendientes: 0, porVencer: 0 })
   const [chartData, setChartData] = useState([])
   const [loading, setLoading] = useState(true)
-  const [asistenciasHoy, setAsistenciasHoy] = useState(0)
   const [expiringMembers, setExpiringMembers] = useState([])
 
   useEffect(() => {
@@ -25,11 +24,10 @@ export default function Dashboard() {
       const thisMonthStart = startOfMonth(now).toISOString()
       const thisMonthEnd = endOfMonth(now).toISOString()
 
-      const [clientsRes, paymentsRes, membershipsRes, attendanceRes] = await Promise.all([
+      const [clientsRes, paymentsRes, membershipsRes] = await Promise.all([
         supabase.from('clients').select('id, nombre, apellido, telefono, estado, email'),
         supabase.from('payments').select('id, client_id, monto, fecha_pago, clients(id, nombre, apellido, email)').gte('fecha_pago', thisMonthStart).lte('fecha_pago', thisMonthEnd),
         supabase.from('memberships').select('id, client_id, fecha_vencimiento').gte('fecha_vencimiento', fechaHoy()).order('fecha_vencimiento', { ascending: true }),
-        supabase.from('attendance').select('id').eq('fecha', fechaHoy()),
       ])
 
       const activos = (clientsRes.data || []).filter((c) => c.estado === 'activo').length
@@ -64,7 +62,6 @@ export default function Dashboard() {
         })
 
       setMetrics({ activos, ingresos, pendientes: porVencer, porVencer })
-      setAsistenciasHoy((attendanceRes.data || []).length)
       setExpiringMembers(expiring)
 
       // Chart: last 6 months
@@ -91,7 +88,6 @@ export default function Dashboard() {
     { label: 'Clientes Activos', value: metrics.activos, icon: Users, color: 'text-blue-400' },
     { label: 'Ingresos del Mes', value: `$${metrics.ingresos.toFixed(2)}`, icon: DollarSign, color: 'text-green-400' },
     { label: 'Membresías por Vencer', value: metrics.porVencer, icon: AlertCircle, color: 'text-yellow-400' },
-    { label: 'Asistencias Hoy', value: asistenciasHoy, icon: ClipboardList, color: 'text-purple-400' },
   ]
 
   const sendWhatsApp = (phone, message) => {

@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm, Controller } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList, MessageCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Pencil, Save } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, X, CreditCard, MessageCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Pencil, Save } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parsePhoneNumberFromString, isValidPhoneNumber } from 'libphonenumber-js'
@@ -215,7 +215,6 @@ export default function Clientes() {
   const [showModal, setShowModal] = useState(false)
   const [showPagos, setShowPagos] = useState(null)
   const [pagos, setPagos] = useState([])
-  const [asistencias, setAsistencias] = useState([])
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState('pagos')
   const [highlightId, setHighlightId] = useState(null)
@@ -452,13 +451,6 @@ export default function Clientes() {
         estado: 'activa',
       })
 
-      // 4. Primera asistencia: el día de inscripción cuenta como primera visita
-      await supabase.from('attendance').insert({
-        client_id: client.id,
-        fecha: fechaInscripcion,
-        hora: format(new Date(), 'HH:mm'),
-      })
-
       const mensaje = montoFinal > 0
         ? `✅ Cliente registrado — $${montoFinal.toFixed(2)} cobrado`
         : '✅ Cliente registrado sin pago inicial'
@@ -545,21 +537,15 @@ export default function Clientes() {
       email: client.email,
       telefono: client.telefono || '',
     })
-    const [p, a, cuotas] = await Promise.all([
+    const [p, cuotas] = await Promise.all([
       supabase
         .from('payments')
         .select('id, client_id, tipo, monto, fecha_pago, notas, cuota_id, clients(id, nombre, apellido, email, telefono), promotions(nombre)')
         .eq('client_id', client.id)
         .order('fecha_pago', { ascending: false }),
-      supabase
-        .from('attendance')
-        .select('id, client_id, fecha, hora, hora_salida')
-        .eq('client_id', client.id)
-        .order('fecha', { ascending: false }),
       fetchCuotasCliente(client.id).catch(() => []),
     ])
     setPagos(p.data || [])
-    setAsistencias(a.data || [])
     setCuotasCliente(cuotas || [])
   }
 
@@ -973,7 +959,6 @@ export default function Clientes() {
               {[
                 ['info', '👤 Información'],
                 ['pagos', '💳 Pagos'],
-                ['asistencias', '📋 Asistencias'],
               ].map(([tab, label]) => (
                 <button
                   key={tab}
@@ -1170,28 +1155,6 @@ export default function Clientes() {
               </>
             )}
 
-            {/* Asistencias Tab */}
-            {activeTab === 'asistencias' && (
-              <>
-                {asistencias.length === 0 ? (
-                  <p className="text-gym-gray text-center py-8">Sin asistencias registradas</p>
-                ) : (
-                  <div className="space-y-3">
-                    {asistencias.map((asist) => (
-                      <div key={asist.id} className="bg-gym-black border border-white/5 rounded-xl p-4 flex items-center justify-between">
-                        <div>
-                          <div className="text-white text-sm font-semibold">
-                            {formatearFecha(asist.fecha)}
-                          </div>
-                          <div className="text-gym-gray text-xs mt-0.5">{asist.hora}</div>
-                        </div>
-                        <ClipboardList className="w-4 h-4 text-gym-red" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
           </div>
         </div>
       )}

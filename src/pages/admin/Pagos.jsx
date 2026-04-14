@@ -3,10 +3,12 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, X, Filter, Clock, Zap } from 'lucide-react'
+import { Plus, X, Filter, Clock, Zap, TrendingDown } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { fechaHoy, mesHoy, parseFechaLocal, formatFechaISO, formatearFecha, formatearFechaObj } from '../../lib/dates'
+import { fetchCuotasPendientes } from '../../lib/cuotas'
+import AbonosModal from '../../components/admin/AbonosModal'
 
 
 const PRECIOS_BASE = { mensual: 25, diario: 3, inscripcion: 5 }
@@ -32,6 +34,8 @@ export default function Pagos() {
   const [selectedPromo, setSelectedPromo] = useState(null)
   const [montoCalculado, setMontoCalculado] = useState(0)
   const [cobrosPendientes, setCobrosPendientes] = useState([])
+  const [cuotasPendientes, setCuotasPendientes] = useState([])
+  const [abonosClient, setAbonosClient] = useState(null)
   const [filtroTipo, setFiltroTipo] = useState('')
   const [clienteEstado, setClienteEstado] = useState(null)
   const [checkingCliente, setCheckingCliente] = useState(false)
@@ -131,20 +135,22 @@ export default function Pagos() {
     const ventanaInicio = new Date(hoyDate)
     ventanaInicio.setDate(ventanaInicio.getDate() - 5) // incluir hasta 5 días vencidos
 
-    const [pagosRes, clientesRes, promosRes, membresíasRes] = await Promise.all([
-      supabase.from('payments').select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)').order('fecha_pago', { ascending: false }).order('id', { ascending: false }),
+    const [pagosRes, clientesRes, promosRes, membresíasRes, cuotasRes] = await Promise.all([
+      supabase.from('payments').select('id, client_id, tipo, monto, fecha_pago, notas, cuota_id, clients(id, nombre, apellido, email, telefono), promotions(nombre)').order('fecha_pago', { ascending: false }).order('id', { ascending: false }),
       supabase.from('clients').select('id, nombre, apellido').eq('estado', 'activo'),
       supabase.from('promotions').select('id, nombre, tipo, valor, activa').eq('activa', true),
       supabase.from('memberships')
         .select('client_id, fecha_vencimiento, clients(id, nombre, apellido)')
         .gte('fecha_vencimiento', formatFechaISO(ventanaInicio))
         .lte('fecha_vencimiento', formatFechaISO(ventanaFin)),
+      fetchCuotasPendientes().catch(() => []),
     ])
 
     setPagos(pagosRes.data || [])
     setClientes(clientesRes.data || [])
     setPromociones(promosRes.data || [])
     setCobrosPendientes(membresíasRes.data || [])
+    setCuotasPendientes(cuotasRes || [])
     if (showSpinner) setLoading(false)
   }
 
@@ -384,6 +390,92 @@ export default function Pagos() {
         </div>
       )}
 
+      {/* Saldos pendientes (cuotas con abonos incompletos) */}
+      {cuotasPendientes.length > 0 && (
+        <div className="bg-red-500/5 border border-red-500/20 rounded-xl sm:rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-2 px-4 sm:px-6 py-3 border-b border-red-500/10">
+            <TrendingDown className="w-4 h-4 text-red-400 flex-shrink-0" />
+            <span className="text-red-400 font-semibold text-sm">
+              Saldos pendientes ({cuotasPendientes.length})
+            </span>
+            <span className="text-red-400/50 text-xs">— clientes con mensualidad incompleta</span>
+          </div>
+
+          {/* Desktop */}
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-red-500/10">
+                  <th className="text-left px-6 py-3 text-red-400/60 text-xs font-semibold uppercase">Cliente</th>
+                  <th className="text-left px-6 py-3 text-red-400/60 text-xs font-semibold uppercase">Mes</th>
+                  <th className="text-left px-6 py-3 text-red-400/60 text-xs font-semibold uppercase">Progreso</th>
+                  <th className="text-left px-6 py-3 text-red-400/60 text-xs font-semibold uppercase">Pendiente</th>
+                  <th className="px-6 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {cuotasPendientes.map((c) => (
+                  <tr key={c.id} className="border-b border-red-500/5 hover:bg-red-500/5 transition-colors">
+                    <td className="px-6 py-3 text-white text-sm font-medium">
+                      {c.clients ? `${c.clients.nombre} ${c.clients.apellido}` : '—'}
+                    </td>
+                    <td className="px-6 py-3 text-gym-gray text-sm">{c.mes_correspondiente}</td>
+                    <td className="px-6 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="relative w-24 h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div className="absolute left-0 top-0 h-full bg-gym-red rounded-full" style={{ width: `${c.porcentaje}%` }} />
+                        </div>
+                        <span className="text-gym-gray text-xs">{c.porcentaje}%</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3">
+                      <span className="text-xs font-bold px-2 py-1 rounded-full bg-red-500/10 text-red-400">
+                        ${c.saldo_pendiente.toFixed(2)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      <button
+                        onClick={() => setAbonosClient(c.clients ? { id: c.client_id, ...c.clients } : null)}
+                        className="flex items-center gap-1.5 ml-auto bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        <TrendingDown className="w-3 h-3" />
+                        Abonar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile */}
+          <div className="sm:hidden space-y-2 p-3">
+            {cuotasPendientes.map((c) => (
+              <div key={c.id} className="bg-red-500/5 border border-red-500/15 rounded-lg p-3 flex items-center justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-white text-sm font-semibold truncate">
+                    {c.clients ? `${c.clients.nombre} ${c.clients.apellido}` : '—'}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="relative w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <div className="absolute left-0 top-0 h-full bg-gym-red rounded-full" style={{ width: `${c.porcentaje}%` }} />
+                    </div>
+                    <span className="text-xs text-red-400 font-semibold">${c.saldo_pendiente.toFixed(2)} pend.</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAbonosClient(c.clients ? { id: c.client_id, ...c.clients } : null)}
+                  className="flex-shrink-0 flex items-center gap-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 font-bold text-xs px-3 py-2 rounded-lg transition-colors"
+                >
+                  <TrendingDown className="w-3 h-3" />
+                  Abonar
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Filter */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2">
         <Filter className="w-4 h-4 text-gym-gray flex-shrink-0" />
@@ -428,13 +520,20 @@ export default function Pagos() {
                         {pago.clients ? `${pago.clients.nombre} ${pago.clients.apellido}` : '—'}
                       </td>
                       <td className="px-4 sm:px-6 py-3 sm:py-4">
-                        <span className={`text-xs font-bold px-2 sm:px-3 py-1 rounded-full capitalize ${
-                          pago.tipo === 'mensual' ? 'bg-blue-500/10 text-blue-400' :
-                          pago.tipo === 'diario' ? 'bg-purple-500/10 text-purple-400' :
-                          'bg-green-500/10 text-green-400'
-                        }`}>
-                          {pago.tipo}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-xs font-bold px-2 sm:px-3 py-1 rounded-full capitalize ${
+                            pago.tipo === 'mensual' ? 'bg-blue-500/10 text-blue-400' :
+                            pago.tipo === 'diario' ? 'bg-purple-500/10 text-purple-400' :
+                            'bg-green-500/10 text-green-400'
+                          }`}>
+                            {pago.tipo}
+                          </span>
+                          {pago.cuota_id && (
+                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/5 text-gym-gray">
+                              ABONO
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 sm:px-6 py-3 sm:py-4 text-gym-red font-black text-sm sm:text-base">${Number(pago.monto).toFixed(2)}</td>
                       <td className="px-4 sm:px-6 py-3 sm:py-4 text-gym-gray text-xs sm:text-sm">
@@ -652,6 +751,17 @@ export default function Pagos() {
             </form>
           </div>
         </div>
+      )}
+
+      {abonosClient && (
+        <AbonosModal
+          client={abonosClient}
+          onClose={() => setAbonosClient(null)}
+          onAbonoRegistrado={() => {
+            setAbonosClient(null)
+            fetchAll()
+          }}
+        />
       )}
     </div>
   )

@@ -9,6 +9,8 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parsePhoneNumberFromString, isValidPhoneNumber } from 'libphonenumber-js'
 import { fechaHoy, mesHoy, parseFechaLocal, formatFechaISO, formatearFecha } from '../../lib/dates'
+import { fetchCuotasCliente, getCuotaActivaPorMes, crearCuota, registrarAbono } from '../../lib/cuotas'
+import AbonosModal from '../../components/admin/AbonosModal'
 
 function countryCodeToFlag(countryCode) {
   return countryCode
@@ -219,6 +221,8 @@ export default function Clientes() {
   const [highlightId, setHighlightId] = useState(null)
   const [partialPaymentAmount, setPartialPaymentAmount] = useState('')
   const [loadingPartialPayment, setLoadingPartialPayment] = useState(false)
+  const [cuotasCliente, setCuotasCliente] = useState([])
+  const [showAbonosModal, setShowAbonosModal] = useState(false)
   const [dupErrors, setDupErrors] = useState({ email: null, telefono: null })
   const [membershipsMap, setMembershipsMap] = useState({})
   const [promociones, setPromociones] = useState([])
@@ -541,10 +545,10 @@ export default function Clientes() {
       email: client.email,
       telefono: client.telefono || '',
     })
-    const [p, a] = await Promise.all([
+    const [p, a, cuotas] = await Promise.all([
       supabase
         .from('payments')
-        .select('id, client_id, tipo, monto, fecha_pago, notas, clients(id, nombre, apellido, email, telefono), promotions(nombre)')
+        .select('id, client_id, tipo, monto, fecha_pago, notas, cuota_id, clients(id, nombre, apellido, email, telefono), promotions(nombre)')
         .eq('client_id', client.id)
         .order('fecha_pago', { ascending: false }),
       supabase
@@ -552,9 +556,11 @@ export default function Clientes() {
         .select('id, client_id, fecha, hora, hora_salida')
         .eq('client_id', client.id)
         .order('fecha', { ascending: false }),
+      fetchCuotasCliente(client.id).catch(() => []),
     ])
     setPagos(p.data || [])
     setAsistencias(a.data || [])
+    setCuotasCliente(cuotas || [])
   }
 
   const addPartialPayment = async () => {
@@ -562,27 +568,21 @@ export default function Clientes() {
       toast.error('Ingresa un monto válido')
       return
     }
-
     if (!showPagos) return
 
     setLoadingPartialPayment(true)
     try {
-      const { error } = await supabase.from('payments').insert({
-        client_id: showPagos.id,
-        tipo: 'pago_parcial',
-        monto: Number(partialPaymentAmount),
-        fecha_pago: fechaHoy(),
-        mes_correspondiente: mesHoy(),
-        notas: `Pago parcial - $${Number(partialPaymentAmount).toFixed(2)}`
-      })
-
-      if (error) throw error
-
-      toast.success(`Pago parcial de $${Number(partialPaymentAmount).toFixed(2)} registrado`)
+      const mes = mesHoy()
+      let cuota = await getCuotaActivaPorMes(showPagos.id, mes)
+      if (!cuota) {
+        cuota = await crearCuota(showPagos.id, mes)
+      }
+      await registrarAbono(cuota.id, Number(partialPaymentAmount), showPagos.id)
+      toast.success(`Abono de $${Number(partialPaymentAmount).toFixed(2)} registrado`)
       setPartialPaymentAmount('')
       verPagos(showPagos)
     } catch (err) {
-      toast.error(err.message || 'Error al registrar pago parcial')
+      toast.error(err.message || 'Error al registrar abono')
     }
     setLoadingPartialPayment(false)
   }
@@ -1079,6 +1079,39 @@ export default function Clientes() {
             {/* Pagos Tab */}
             {activeTab === 'pagos' && (
               <>
+                {/* Cuotas con saldo pendiente */}
+                {cuotasCliente.filter((c) => c.estado === 'pendiente').length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    <p className="text-gym-gray text-xs font-semibold uppercase">Cuotas con saldo pendiente</p>
+                    {cuotasCliente.filter((c) => c.estado === 'pendiente').map((cuota) => (
+                      <div key={cuota.id} className="bg-gym-black border border-gym-red/20 rounded-xl p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-white text-sm font-semibold capitalize">{cuota.mes_correspondiente}</span>
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-red-500/10 text-red-400">
+                            Pendiente ${cuota.saldo_pendiente.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className="absolute left-0 top-0 h-full bg-gym-red rounded-full"
+                            style={{ width: `${cuota.porcentaje}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-gym-gray">
+                          <span>${cuota.monto_pagado.toFixed(2)} pagado</span>
+                          <span>${cuota.monto_total.toFixed(2)} total</span>
+                        </div>
+                        <button
+                          onClick={() => setShowAbonosModal(true)}
+                          className="w-full text-xs bg-gym-red/10 hover:bg-gym-red/20 text-gym-red font-bold py-1.5 rounded-lg transition-colors"
+                        >
+                          Registrar abono
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {pagos.length === 0 ? (
                   <p className="text-gym-gray text-center py-8">Sin pagos registrados</p>
                 ) : (
@@ -1086,7 +1119,14 @@ export default function Clientes() {
                     {pagos.map((pago) => (
                       <div key={pago.id} className="bg-gym-black border border-white/5 rounded-xl p-4 flex items-center justify-between">
                         <div>
-                          <div className="text-white text-sm font-semibold capitalize">{pago.tipo}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-white text-sm font-semibold capitalize">{pago.tipo}</span>
+                            {pago.cuota_id && (
+                              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-white/5 text-gym-gray">
+                                ABONO
+                              </span>
+                            )}
+                          </div>
                           <div className="text-gym-gray text-xs mt-0.5">
                             {formatearFecha(pago.fecha_pago)}
                             {pago.promotions && <span className="ml-2 text-gym-red">· {pago.promotions.nombre}</span>}
@@ -1099,9 +1139,9 @@ export default function Clientes() {
                   </div>
                 )}
 
-                {/* Partial Payment Section */}
+                {/* Sección de abonos */}
                 <div className="mt-6 pt-6 border-t border-white/5 space-y-3">
-                  <h4 className="text-white font-bold text-sm">Registrar Pago Parcial</h4>
+                  <h4 className="text-white font-bold text-sm">Registrar Abono</h4>
                   <div className="flex gap-2">
                     <input
                       type="number"
@@ -1120,6 +1160,12 @@ export default function Clientes() {
                       {loadingPartialPayment ? 'Guardando...' : 'Registrar'}
                     </button>
                   </div>
+                  <button
+                    onClick={() => setShowAbonosModal(true)}
+                    className="w-full text-xs text-gym-gray hover:text-white border border-white/5 hover:border-white/10 rounded-lg py-2 transition-colors"
+                  >
+                    Ver detalle de cuota y abonos
+                  </button>
                 </div>
               </>
             )}
@@ -1148,6 +1194,17 @@ export default function Clientes() {
             )}
           </div>
         </div>
+      )}
+
+      {showAbonosModal && showPagos && (
+        <AbonosModal
+          client={showPagos}
+          onClose={() => setShowAbonosModal(false)}
+          onAbonoRegistrado={() => {
+            setShowAbonosModal(false)
+            verPagos(showPagos)
+          }}
+        />
       )}
     </div>
   )

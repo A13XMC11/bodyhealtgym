@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm, Controller } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList, MessageCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, X, CreditCard, ClipboardList, MessageCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Pencil, Save } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parsePhoneNumberFromString, isValidPhoneNumber } from 'libphonenumber-js'
@@ -226,6 +226,12 @@ export default function Clientes() {
   const { register, handleSubmit, reset, control, watch, getValues, setValue, formState: { errors } } = useForm({
     defaultValues: { fechaInscripcion: fechaHoy(), tipoPago: 'inscripcion_mensual', descuento: 0, promocion_id: '' }
   })
+
+  const editForm = useForm({
+    defaultValues: { nombre: '', apellido: '', email: '', telefono: '' }
+  })
+  const [editSaving, setEditSaving] = useState(false)
+  const [editDupErrors, setEditDupErrors] = useState({ email: null, telefono: null })
 
   const fechaInscripcionWatch = watch('fechaInscripcion')
   const tipoPagoWatch = watch('tipoPago')
@@ -469,19 +475,72 @@ export default function Clientes() {
     setSaving(false)
   }
 
+  const onUpdateClient = async (formData) => {
+    setEditSaving(true)
+    setEditDupErrors({ email: null, telefono: null })
+    try {
+      const telefonoNorm = formData.telefono ? normalizePhone(formData.telefono) : null
+
+      // Check for duplicates (excluding the current client)
+      const condiciones = [`email.eq.${formData.email}`]
+      if (telefonoNorm) condiciones.push(`telefono.eq.${telefonoNorm}`)
+      const { data: existentes } = await supabase
+        .from('clients')
+        .select('id, email, telefono')
+        .or(condiciones.join(','))
+        .neq('id', showPagos.id)
+
+      if (existentes?.length > 0) {
+        const newErrors = { email: null, telefono: null }
+        for (const dup of existentes) {
+          if (dup.email === formData.email) newErrors.email = 'Ya existe otro cliente con este correo'
+          if (telefonoNorm && dup.telefono === telefonoNorm) newErrors.telefono = 'Ya existe otro cliente con este teléfono'
+        }
+        setEditDupErrors(newErrors)
+        setEditSaving(false)
+        return
+      }
+
+      const { error } = await supabase.from('clients').update({
+        nombre: formData.nombre,
+        apellido: formData.apellido,
+        email: formData.email,
+        telefono: telefonoNorm,
+      }).eq('id', showPagos.id)
+
+      if (error) throw error
+
+      toast.success('Cliente actualizado')
+      const updated = { ...showPagos, nombre: formData.nombre, apellido: formData.apellido, email: formData.email, telefono: telefonoNorm }
+      setShowPagos(updated)
+      fetchClients()
+    } catch {
+      toast.error('Error al actualizar cliente')
+    }
+    setEditSaving(false)
+  }
+
   const toggleEstado = async (client) => {
     const nuevoEstado = client.estado === 'activo' ? 'inactivo' : 'activo'
     const { error } = await supabase.from('clients').update({ estado: nuevoEstado }).eq('id', client.id)
     if (error) toast.error('Error al actualizar')
     else {
       toast.success(`Cliente ${nuevoEstado === 'activo' ? 'activado' : 'desactivado'}`)
+      if (showPagos?.id === client.id) setShowPagos((prev) => ({ ...prev, estado: nuevoEstado }))
       fetchClients()
     }
   }
 
-  const verPagos = async (client) => {
+  const verPagos = async (client, tab = 'info') => {
     setShowPagos(client)
-    setActiveTab('pagos')
+    setActiveTab(tab)
+    setEditDupErrors({ email: null, telefono: null })
+    editForm.reset({
+      nombre: client.nombre,
+      apellido: client.apellido,
+      email: client.email,
+      telefono: client.telefono || '',
+    })
     const [p, a] = await Promise.all([
       supabase
         .from('payments')
@@ -619,7 +678,8 @@ export default function Clientes() {
                     <tr
                       key={client.id}
                       id={`row-${client.id}`}
-                      className={`border-b border-white/5 hover:bg-white/2 transition-all ${
+                      onClick={() => verPagos(client)}
+                      className={`border-b border-white/5 hover:bg-white/5 cursor-pointer transition-all ${
                         client.id === highlightId ? 'bg-gym-red/10 outline outline-1 outline-gym-red/50' : ''
                       }`}
                     >
@@ -640,12 +700,12 @@ export default function Clientes() {
                           {membershipStatus.label}
                         </span>
                       </td>
-                      <td className="px-4 sm:px-6 py-3 sm:py-4">
+                      <td className="px-4 sm:px-6 py-3 sm:py-4" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center gap-1 sm:gap-2">
-                          <button onClick={() => verPagos(client)} className="p-1.5 text-gym-gray hover:text-white btn-icon" title="Ver pagos">
+                          <button onClick={(e) => { e.stopPropagation(); verPagos(client, 'pagos') }} className="p-1.5 text-gym-gray hover:text-white btn-icon" title="Ver pagos">
                             <CreditCard className="w-4 h-4" />
                           </button>
-                          <button onClick={() => toggleEstado(client)} className="p-1.5 text-gym-gray hover:text-white btn-icon" title="Cambiar estado">
+                          <button onClick={(e) => { e.stopPropagation(); toggleEstado(client) }} className="p-1.5 text-gym-gray hover:text-white btn-icon" title="Cambiar estado">
                             {client.estado === 'activo' ? <UserX className="w-4 h-4" /> : <UserCheck className="w-4 h-4" />}
                           </button>
                         </div>
@@ -667,7 +727,7 @@ export default function Clientes() {
               {filtered.map((client) => {
                 const membershipStatus = getMembershipStatus(client.id)
                 return (
-                  <div key={client.id} id={`row-${client.id}`} className={`bg-gym-black rounded-lg p-3 space-y-2 ${client.id === highlightId ? 'border-2 border-gym-red' : 'border border-white/5'}`}>
+                  <div key={client.id} id={`row-${client.id}`} onClick={() => verPagos(client)} className={`bg-gym-black rounded-lg p-3 space-y-2 cursor-pointer ${client.id === highlightId ? 'border-2 border-gym-red' : 'border border-white/5'}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="text-white font-semibold text-sm truncate">{client.nombre} {client.apellido}</div>
@@ -686,11 +746,11 @@ export default function Clientes() {
                       <span className={`font-bold px-2 py-0.5 rounded-full ${membershipStatus.color}`}>{membershipStatus.label}</span>
                     </div>
                     <div className="flex items-center gap-2 pt-2 border-t border-white/5">
-                      <button onClick={() => verPagos(client)} className="flex-1 p-2 text-xs text-gym-gray hover:text-white hover:bg-white/5 rounded btn-icon flex items-center justify-center gap-1" title="Ver pagos">
+                      <button onClick={(e) => { e.stopPropagation(); verPagos(client, 'pagos') }} className="flex-1 p-2 text-xs text-gym-gray hover:text-white hover:bg-white/5 rounded btn-icon flex items-center justify-center gap-1" title="Ver pagos">
                         <CreditCard className="w-3.5 h-3.5" />
                         <span>Pagos</span>
                       </button>
-                      <button onClick={() => toggleEstado(client)} className="flex-1 p-2 text-xs text-gym-gray hover:text-white hover:bg-white/5 rounded btn-icon flex items-center justify-center gap-1" title="Cambiar estado">
+                      <button onClick={(e) => { e.stopPropagation(); toggleEstado(client) }} className="flex-1 p-2 text-xs text-gym-gray hover:text-white hover:bg-white/5 rounded btn-icon flex items-center justify-center gap-1" title="Cambiar estado">
                         {client.estado === 'activo' ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
                         <span>{client.estado === 'activo' ? 'Desactivar' : 'Activar'}</span>
                       </button>
@@ -911,13 +971,14 @@ export default function Clientes() {
             {/* Tab Bar */}
             <div className="flex gap-1 mb-6 bg-gym-black rounded-xl p-1">
               {[
+                ['info', '👤 Información'],
                 ['pagos', '💳 Pagos'],
                 ['asistencias', '📋 Asistencias'],
               ].map(([tab, label]) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-2 text-sm font-bold rounded-lg nav-interactive ${
+                  className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-lg nav-interactive ${
                     activeTab === tab ? 'bg-gym-red text-white' : 'text-gym-gray hover:text-white'
                   }`}
                 >
@@ -925,6 +986,95 @@ export default function Clientes() {
                 </button>
               ))}
             </div>
+
+            {/* Info / Edit Tab */}
+            {activeTab === 'info' && (
+              <form onSubmit={editForm.handleSubmit(onUpdateClient)} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-gym-gray text-xs mb-1">Nombre</label>
+                    <input
+                      {...editForm.register('nombre', { required: true })}
+                      className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gym-gray text-xs mb-1">Apellido</label>
+                    <input
+                      {...editForm.register('apellido', { required: true })}
+                      className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-gym-gray text-xs mb-1">Correo electrónico</label>
+                  <input
+                    {...editForm.register('email', {
+                      required: true,
+                      onChange: () => setEditDupErrors((p) => ({ ...p, email: null })),
+                    })}
+                    type="email"
+                    className={`w-full bg-gym-black border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red ${editDupErrors.email ? 'border-red-500' : 'border-white/10'}`}
+                  />
+                  {editDupErrors.email && <p className="text-red-400 text-xs mt-1">{editDupErrors.email}</p>}
+                </div>
+
+                <div>
+                  <label className="block text-gym-gray text-xs mb-1">Teléfono</label>
+                  <Controller
+                    name="telefono"
+                    control={editForm.control}
+                    rules={{
+                      validate: (v) => {
+                        if (!v || v.trim() === '') return true
+                        const normalized = normalizePhone(v)
+                        return isValidPhoneNumber(normalized)
+                          ? true
+                          : 'Número inválido. Ej: 0998020967 o +593998020967'
+                      },
+                    }}
+                    render={({ field, fieldState }) => (
+                      <PhoneInputWithCode
+                        field={{
+                          ...field,
+                          onChange: (v) => { field.onChange(v); setEditDupErrors((p) => ({ ...p, telefono: null })) },
+                        }}
+                        error={fieldState.error?.message || editDupErrors.telefono}
+                      />
+                    )}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between bg-gym-black border border-white/10 rounded-lg px-3 py-2.5">
+                  <div>
+                    <p className="text-white text-sm font-semibold">Estado</p>
+                    <p className="text-gym-gray text-xs mt-0.5">Activar o desactivar al cliente</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleEstado(showPagos)}
+                    className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full transition-colors ${
+                      showPagos?.estado === 'activo'
+                        ? 'bg-green-500/10 text-green-400 hover:bg-red-500/10 hover:text-red-400'
+                        : 'bg-red-500/10 text-red-400 hover:bg-green-500/10 hover:text-green-400'
+                    }`}
+                  >
+                    {showPagos?.estado === 'activo' ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                    {showPagos?.estado === 'activo' ? 'Activo' : 'Inactivo'}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="w-full flex items-center justify-center gap-2 bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-2.5 rounded-xl btn-interactive"
+                >
+                  <Save className="w-4 h-4" />
+                  {editSaving ? 'Guardando...' : 'Guardar cambios'}
+                </button>
+              </form>
+            )}
 
             {/* Pagos Tab */}
             {activeTab === 'pagos' && (

@@ -161,20 +161,24 @@ export default function Dashboard() {
             <h4 className="text-yellow-400 font-bold text-sm sm:text-base">Próximas a Vencer (7 días)</h4>
           </div>
           {expiringMembers.length === 0 ? (
-            <p className="text-gym-gray text-xs sm:text-sm text-center py-6 sm:py-8">Sin membresías próximas a vencer</p>
+            <p className="text-gym-gray text-xs sm:text-sm text-center py-6 sm:py-8">✅ No hay membresías próximas a vencer</p>
           ) : (
-            <div className="space-y-2 sm:space-y-2">
+            <div className="space-y-2 sm:space-y-3">
               {expiringMembers.map((member) => {
                 const daysLeft = Math.max(0, Math.floor((parseFechaLocal(member.fecha_vencimiento) - parseFechaLocal(fechaHoy())) / 86400000))
-                const daysText = daysLeft === 0 ? 'hoy' : `en ${daysLeft} días`
+                const daysText = daysLeft === 0 ? 'hoy' : `en ${daysLeft} día${daysLeft !== 1 ? 's' : ''}`
+                const urgency = daysLeft === 0 ? 'text-red-500 bg-red-500/10' : daysLeft <= 3 ? 'text-orange-400 bg-orange-500/10' : 'text-yellow-400 bg-yellow-500/10'
+
                 return (
-                  <div key={member.id} className="bg-gym-black rounded-lg p-2.5 sm:p-3 flex items-center justify-between gap-2 sm:gap-3">
+                  <div key={member.id} className={`rounded-lg p-3 sm:p-4 border flex items-center justify-between gap-3 ${urgency}`}>
                     <div className="min-w-0 flex-1">
-                      <div className="text-white font-semibold text-xs sm:text-sm truncate">
+                      <div className="text-white font-bold text-sm">
                         {member.nombre} {member.apellido}
                       </div>
-                      <div className="text-yellow-400 text-xs mt-0.5 truncate">{member.email}</div>
-                      <div className="text-gym-gray text-xs mt-1">Vence {daysText}</div>
+                      <div className="text-xs mt-1 opacity-80">{member.email}</div>
+                      <div className="font-semibold text-xs mt-1">
+                        Vence {daysText} • {daysLeft === 0 ? '⚠️ HOY' : daysLeft <= 3 ? '🔴 URGENTE' : '🟡 Próximo'}
+                      </div>
                     </div>
                     <button
                       onClick={() =>
@@ -185,9 +189,9 @@ export default function Dashboard() {
                       }
                       disabled={!member.telefono}
                       title={member.telefono ? 'Enviar WhatsApp' : 'Agrega el teléfono del cliente para enviar WhatsApp'}
-                      className="p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+                      className="p-2.5 sm:p-3 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0"
                     >
-                      <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
                     </button>
                   </div>
                 )

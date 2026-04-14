@@ -431,18 +431,16 @@ export default function Clientes() {
         if (pagoError) throw { tipo: 'pago', error: pagoError }
       }
 
-      // 3. Crear membresía si corresponde
-      if (tipoPago === 'inscripcion_mensual' || tipoPago === 'solo_mensual') {
-        const vencimiento = parseFechaLocal(fechaInscripcion)
-        vencimiento.setDate(vencimiento.getDate() + 30)
-        await supabase.from('memberships').insert({
-          client_id: client.id,
-          tipo: 'mensual',
-          fecha_inicio: fechaInscripcion,
-          fecha_vencimiento: formatFechaISO(vencimiento),
-          estado: 'activa',
-        })
-      }
+      // 3. SIEMPRE crear membresía (30 días desde la inscripción)
+      const vencimiento = parseFechaLocal(fechaInscripcion)
+      vencimiento.setDate(vencimiento.getDate() + 30)
+      await supabase.from('memberships').insert({
+        client_id: client.id,
+        tipo: 'mensual',
+        fecha_inicio: fechaInscripcion,
+        fecha_vencimiento: formatFechaISO(vencimiento),
+        estado: 'activa',
+      })
 
       // 4. Primera asistencia: el día de inscripción cuenta como primera visita
       await supabase.from('attendance').insert({
@@ -535,10 +533,23 @@ export default function Clientes() {
     if (!m) return { label: 'Sin membresía', color: 'bg-gray-500/10 text-gray-400' }
     const hoy = parseFechaLocal(fechaHoy())
     const vence = parseFechaLocal(m.fecha_vencimiento)
-    if (vence >= hoy) {
-      return { label: `Activa · ${formatearFecha(m.fecha_vencimiento, 'day')}`, color: 'bg-green-500/10 text-green-400' }
+    const diasRestantes = Math.max(0, Math.floor((vence - hoy) / 86400000))
+
+    if (vence < hoy) {
+      return { label: `❌ Vencida · ${formatearFecha(m.fecha_vencimiento, 'day')}`, color: 'bg-red-500/10 text-red-400' }
     }
-    return { label: `Vencida · ${formatearFecha(m.fecha_vencimiento, 'day')}`, color: 'bg-red-500/10 text-red-400' }
+
+    if (diasRestantes <= 7) {
+      return {
+        label: `⚠️ Vence en ${diasRestantes} día${diasRestantes !== 1 ? 's' : ''}`,
+        color: 'bg-yellow-500/10 text-yellow-400'
+      }
+    }
+
+    return {
+      label: `✅ Activa · ${diasRestantes} días`,
+      color: 'bg-green-500/10 text-green-400'
+    }
   }
 
   const sendWhatsApp = (phone, message) => {
@@ -785,6 +796,22 @@ export default function Clientes() {
                   onChange={(v) => setValue('fechaInscripcion', v)}
                 />
               </div>
+
+              {/* Membership Expiration Info */}
+              {(() => {
+                const fecha = fechaInscripcionWatch || fechaHoy()
+                const vencimiento = parseFechaLocal(fecha)
+                vencimiento.setDate(vencimiento.getDate() + 30)
+                const diasRestantes = Math.max(0, Math.floor((vencimiento - parseFechaLocal(fechaHoy())) / 86400000))
+                return (
+                  <div className="bg-gym-red/10 border border-gym-red/30 rounded-lg p-3">
+                    <p className="text-gym-gray text-xs font-semibold uppercase tracking-wider mb-1">Membresía</p>
+                    <p className="text-white font-bold text-sm">Vence en 30 días</p>
+                    <p className="text-gym-red text-xs mt-1">{formatearFecha(formatFechaISO(vencimiento), 'long')}</p>
+                    <p className="text-gym-gray text-xs mt-2">({diasRestantes} días restantes)</p>
+                  </div>
+                )
+              })()}
 
               {/* Promoción */}
               <div>

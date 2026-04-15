@@ -71,20 +71,20 @@ export default function Navbar() {
 
         {/* Mobile menu */}
         {menuOpen && (
-          <div className="md:hidden bg-gym-dark border-t border-white/5 py-4 space-y-1 px-2 animate-fade-in">
+          <div className="md:hidden bg-gym-dark border-t border-white/5 py-4 space-y-2 px-4 mobile-menu-open">
             {links.map((l) => (
               <a
                 key={l.href}
                 href={l.href}
                 onClick={() => setMenuOpen(false)}
-                className="block text-gym-gray hover:text-white transition-colors duration-160 py-2.5 px-2 rounded-lg font-medium"
+                className="block text-gym-gray hover:text-white hover:bg-white/5 transition-all duration-200 py-3 px-4 rounded-lg font-medium"
               >
                 {l.label}
               </a>
             ))}
             <Link
               to="/login"
-              className="block bg-gym-red hover:bg-gym-red-hover text-white text-center font-bold px-5 py-2.5 rounded-lg mt-2 btn-interactive"
+              className="block bg-gym-red hover:bg-gym-red-hover text-white text-center font-bold px-5 py-3 rounded-lg mt-3 btn-interactive transition-all duration-200"
             >
               Iniciar Sesión
             </Link>

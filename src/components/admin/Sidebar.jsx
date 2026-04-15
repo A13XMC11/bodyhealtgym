@@ -36,16 +36,15 @@ export default function Sidebar({ onClose }) {
             end={item.end}
             onClick={onClose}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium nav-interactive whitespace-nowrap sm:whitespace-normal transition-all duration-150 ${
+              `flex items-center gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg sm:rounded-xl text-xs sm:text-sm font-medium nav-interactive transition-all duration-200 ${
                 isActive
                   ? 'bg-gym-red text-white shadow-lg shadow-gym-red/20'
                   : 'text-gym-gray hover:text-white hover:bg-white/5'
               }`
             }
           >
-            <item.icon className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 transition-transform duration-150" />
-            <span className="hidden sm:inline">{item.label}</span>
-            <span className="sm:hidden text-xs">{item.label.charAt(0)}</span>
+            <item.icon className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0 transition-transform duration-200" />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
           </NavLink>
         ))}
       </nav>

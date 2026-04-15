@@ -23,7 +23,7 @@ export default function AdminLayout() {
 
       {/* Mobile Sidebar Drawer */}
       <div
-        className={`fixed left-0 top-0 bottom-0 z-40 md:hidden transition-transform duration-300 ${
+        className={`fixed left-0 top-0 bottom-0 z-40 md:hidden drawer-slide ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

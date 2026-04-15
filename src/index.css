@@ -88,12 +88,19 @@ body {
 /* Nav and sidebar links — press feedback, no hover scale (used too frequently) */
 .nav-interactive {
   transition-property: transform, background-color, color;
-  transition-duration: 120ms;
+  transition-duration: 200ms;
   transition-timing-function: var(--ease-strong);
 }
 
 .nav-interactive:active {
   transform: scale(0.97);
+}
+
+/* Drawer animation — iOS-like curve for smooth, responsive motion */
+.drawer-slide {
+  transition-property: transform;
+  transition-duration: 250ms;
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ===========================
@@ -191,8 +198,28 @@ select {
 
 a {
   transition-property: color, opacity;
-  transition-duration: 160ms;
+  transition-duration: 200ms;
   transition-timing-function: var(--ease-strong);
+}
+
+/* ===========================
+   Mobile Menu Animation
+   Smooth fade-in with slight upward motion
+   =========================== */
+
+.mobile-menu-open {
+  animation: mobileMenuEnter 200ms var(--ease-strong) forwards;
+}
+
+@keyframes mobileMenuEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ===========================

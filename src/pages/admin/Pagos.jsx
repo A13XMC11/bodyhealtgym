@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, X, Filter, Clock, Zap, TrendingDown, Trash2 } from 'lucide-react'
+import { Plus, X, Filter, Clock, ExternalLink, TrendingDown, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { fechaHoy, mesHoy, parseFechaLocal, formatFechaISO, formatearFecha, formatearFechaObj } from '../../lib/dates'
@@ -25,6 +26,8 @@ function calcularMonto(tipo, promo, precioBase) {
 
 export default function Pagos() {
   const { user } = useAuth()
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [pagos, setPagos] = useState([])
   const [clientes, setClientes] = useState([])
   const [promociones, setPromociones] = useState([])
@@ -57,6 +60,18 @@ export default function Pagos() {
   const descuentoError = descuento > montoCalculado
 
   useEffect(() => { fetchAll({ showSpinner: true }) }, [user])
+
+  // Auto-abrir modal de cobro si se llegó desde Clientes con ?client=<id>
+  useEffect(() => {
+    const clientId = searchParams.get('client')
+    if (!clientId || clientes.length === 0) return
+    reset()
+    setValue('client_id', clientId)
+    setValue('tipo', 'mensual')
+    setShowModal(true)
+    searchParams.delete('client')
+    setSearchParams(searchParams)
+  }, [searchParams, clientes])
 
   useEffect(() => {
     let base = PRECIOS_BASE[tipoWatch] ?? Number(precioDiario) ?? 3
@@ -265,11 +280,8 @@ export default function Pagos() {
     setSaving(false)
   }
 
-  const abrirCobroRapido = (clientId) => {
-    reset()
-    setValue('client_id', clientId)
-    setValue('tipo', 'mensual')
-    setShowModal(true)
+  const irAPagosCliente = (clientId) => {
+    navigate(`/admin/clientes?client=${clientId}&tab=pagos`)
   }
 
   const deletePago = async (pago) => {
@@ -404,11 +416,11 @@ export default function Pagos() {
                       </td>
                       <td className="px-6 py-3 text-right">
                         <button
-                          onClick={() => abrirCobroRapido(m.client_id)}
+                          onClick={() => irAPagosCliente(m.client_id)}
                           className="flex items-center gap-1.5 ml-auto bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 font-bold text-xs px-3 py-1.5 rounded-lg transition-colors"
                         >
-                          <Zap className="w-3 h-3" />
-                          Cobrar
+                          <ExternalLink className="w-3 h-3" />
+                          Ver cliente
                         </button>
                       </td>
                     </tr>
@@ -441,11 +453,11 @@ export default function Pagos() {
                     </div>
                   </div>
                   <button
-                    onClick={() => abrirCobroRapido(m.client_id)}
+                    onClick={() => irAPagosCliente(m.client_id)}
                     className="flex-shrink-0 flex items-center gap-1 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 font-bold text-xs px-3 py-2 rounded-lg transition-colors"
                   >
-                    <Zap className="w-3 h-3" />
-                    Cobrar
+                    <ExternalLink className="w-3 h-3" />
+                    Ver cliente
                   </button>
                 </div>
               )

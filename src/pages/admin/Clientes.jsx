@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm, Controller } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, Search, UserCheck, UserX, X, CreditCard, MessageCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Pencil, Save, Trash2 } from 'lucide-react'
+import { Plus, Search, UserCheck, UserX, X, CreditCard, MessageCircle, Calendar as CalendarIcon, ChevronLeft, ChevronRight, Pencil, Save, Trash2, Clock, Zap } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { parsePhoneNumberFromString, isValidPhoneNumber } from 'libphonenumber-js'
@@ -207,6 +207,7 @@ function calcularDescuentoPromo(promo, baseTotal) {
 
 export default function Clientes() {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [clients, setClients] = useState([])
   const [filtered, setFiltered] = useState([])
@@ -316,6 +317,19 @@ export default function Clientes() {
     }, 3000)
     return () => clearTimeout(timer)
   }, [searchParams, setSearchParams])
+
+  // Auto-abrir panel de cliente desde URL params (ej: redireccionado desde Pagos)
+  useEffect(() => {
+    const clientId = searchParams.get('client')
+    const tab = searchParams.get('tab') || 'pagos'
+    if (!clientId || clients.length === 0) return
+    const client = clients.find((c) => String(c.id) === String(clientId))
+    if (!client) return
+    verPagos(client, tab)
+    searchParams.delete('client')
+    searchParams.delete('tab')
+    setSearchParams(searchParams)
+  }, [searchParams, clients])
 
   useEffect(() => {
     const q = search.toLowerCase()
@@ -1166,6 +1180,44 @@ export default function Clientes() {
             {/* Pagos Tab */}
             {activeTab === 'pagos' && (
               <>
+                {/* Cobro pendiente de membresía */}
+                {(() => {
+                  const mem = membershipsMap[showPagos?.id]
+                  if (!mem) return null
+                  const hoy = parseFechaLocal(fechaHoy())
+                  const venc = parseFechaLocal(mem.fecha_vencimiento)
+                  const diasRestantes = Math.ceil((venc - hoy) / (1000 * 60 * 60 * 24))
+                  if (diasRestantes > 10 || diasRestantes < -5) return null
+                  const vencido = diasRestantes < 0
+                  return (
+                    <div className="mb-4 bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Clock className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                        <span className="text-yellow-400 font-semibold text-sm">Cobro pendiente</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-white text-sm font-medium">
+                            {vencido
+                              ? `Membresía vencida hace ${Math.abs(diasRestantes)} día${Math.abs(diasRestantes) !== 1 ? 's' : ''}`
+                              : `Membresía vence en ${diasRestantes} día${diasRestantes !== 1 ? 's' : ''}`}
+                          </div>
+                          <div className={`text-xs mt-0.5 ${vencido ? 'text-red-400' : 'text-yellow-300'}`}>
+                            {formatearFecha(mem.fecha_vencimiento)}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/admin/pagos?client=${showPagos.id}`)}
+                          className="flex-shrink-0 flex items-center gap-1.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 font-bold text-xs px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          <Zap className="w-3 h-3" />
+                          Cobrar
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
+
                 {/* Cuotas con saldo pendiente */}
                 {cuotasCliente.filter((c) => c.estado === 'pendiente').length > 0 && (
                   <div className="mb-4 space-y-2">

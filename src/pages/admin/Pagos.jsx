@@ -48,7 +48,6 @@ export default function Pagos() {
   const [abonosAbono, setAbonosAbono] = useState([])
   const [loadingCuota, setLoadingCuota] = useState(false)
   const [montoAbono, setMontoAbono] = useState('')
-  const [montoTotalCuota, setMontoTotalCuota] = useState(25)
   const [cuotaCompletada, setCuotaCompletada] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue } = useForm({
@@ -210,20 +209,6 @@ export default function Pagos() {
     try {
       // --- Abono mensual ---
       if (formData.tipo === 'abono') {
-        if (!cuotaAbono) {
-          if (!montoTotalCuota || montoTotalCuota <= 0) {
-            toast.error('Ingresa un monto total válido')
-            setSaving(false)
-            return
-          }
-          const nuevaCuota = await crearCuota(formData.client_id, mesHoy(), montoTotalCuota)
-          setCuotaAbono(nuevaCuota)
-          setAbonosAbono([])
-          toast.success(`Cuota de $${Number(montoTotalCuota).toFixed(2)} creada — ahora registra el abono`)
-          setSaving(false)
-          return
-        }
-
         const montoNum = Number(montoAbono)
         if (!montoNum || montoNum <= 0) {
           toast.error('Ingresa un monto de abono válido')
@@ -231,11 +216,18 @@ export default function Pagos() {
           return
         }
 
-        const { cuota: cuotaActualizada, membresia } = await registrarAbono(cuotaAbono.id, montoNum, formData.client_id)
+        let cuotaActual = cuotaAbono
+        if (!cuotaActual) {
+          cuotaActual = await crearCuota(formData.client_id, mesHoy(), 25)
+          setCuotaAbono(cuotaActual)
+          setAbonosAbono([])
+        }
+
+        const { cuota: cuotaActualizada, membresia } = await registrarAbono(cuotaActual.id, montoNum, formData.client_id)
         setCuotaAbono(cuotaActualizada)
         setMontoAbono('')
 
-        const abonosActualizados = await fetchAbonosDeCuota(cuotaAbono.id)
+        const abonosActualizados = await fetchAbonosDeCuota(cuotaActual.id)
         setAbonosAbono(abonosActualizados)
 
         if (cuotaActualizada.estado === 'pagada' || membresia) {
@@ -780,7 +772,7 @@ export default function Pagos() {
           <div className="bg-gym-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-white font-bold text-lg">Registrar Pago</h3>
-              <button onClick={() => { setShowModal(false); reset(); setClienteEstado(null); setCuotaAbono(null); setAbonosAbono([]); setMontoAbono(''); setMontoTotalCuota(25); setCuotaCompletada(false) }} className="text-gym-gray hover:text-white btn-icon">
+              <button onClick={() => { setShowModal(false); reset(); setClienteEstado(null); setCuotaAbono(null); setAbonosAbono([]); setMontoAbono(''); setCuotaCompletada(false) }} className="text-gym-gray hover:text-white btn-icon">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -870,39 +862,28 @@ export default function Pagos() {
                       <p className="text-white font-bold">Mensualidad completada</p>
                       <p className="text-gym-gray text-sm">La membresía fue extendida 30 días</p>
                     </div>
-                  ) : !cuotaAbono ? (
-                    <div className="space-y-3">
-                      <p className="text-gym-gray text-sm">
-                        No hay cuota abierta para este mes. Define el monto total y créala.
-                      </p>
-                      <div>
-                        <label className="block text-gym-gray text-xs mb-1">Monto total a cobrar ($)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="1"
-                          value={montoTotalCuota}
-                          onChange={(e) => setMontoTotalCuota(Number(e.target.value))}
-                          className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
-                        />
-                      </div>
-                    </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* Progreso de la cuota */}
-                      <div className="bg-gym-black border border-white/5 rounded-xl p-4 space-y-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-white font-semibold">Cuota mensual</span>
-                          <span className="text-gym-gray">${cuotaAbono.monto_total.toFixed(2)}</span>
+                      {/* Progreso de la cuota (si ya existe) o info base */}
+                      {cuotaAbono ? (
+                        <div className="bg-gym-black border border-white/5 rounded-xl p-4 space-y-3">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-white font-semibold">Cuota mensual</span>
+                            <span className="text-gym-gray">${cuotaAbono.monto_total.toFixed(2)}</span>
+                          </div>
+                          <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div className="absolute left-0 top-0 h-full bg-gym-red rounded-full transition-all duration-500" style={{ width: `${cuotaAbono.porcentaje}%` }} />
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-green-400 font-semibold">Pagado: ${cuotaAbono.monto_pagado.toFixed(2)}</span>
+                            <span className="text-red-400 font-semibold">Pendiente: ${cuotaAbono.saldo_pendiente.toFixed(2)}</span>
+                          </div>
                         </div>
-                        <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
-                          <div className="absolute left-0 top-0 h-full bg-gym-red rounded-full transition-all duration-500" style={{ width: `${cuotaAbono.porcentaje}%` }} />
+                      ) : (
+                        <div className="bg-gym-black border border-white/5 rounded-xl px-4 py-3">
+                          <p className="text-gym-gray text-sm">Cuota mensual: <span className="text-white font-bold">$25.00</span> pendiente</p>
                         </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-green-400 font-semibold">Pagado: ${cuotaAbono.monto_pagado.toFixed(2)}</span>
-                          <span className="text-red-400 font-semibold">Pendiente: ${cuotaAbono.saldo_pendiente.toFixed(2)}</span>
-                        </div>
-                      </div>
+                      )}
                       {/* Monto del abono */}
                       <div>
                         <label className="block text-gym-gray text-xs mb-1">Monto del abono ($)</label>
@@ -912,10 +893,10 @@ export default function Pagos() {
                           min="0.01"
                           value={montoAbono}
                           onChange={(e) => setMontoAbono(e.target.value)}
-                          placeholder={`Máx. $${cuotaAbono.saldo_pendiente.toFixed(2)}`}
+                          placeholder={cuotaAbono ? `Máx. $${cuotaAbono.saldo_pendiente.toFixed(2)}` : 'Máx. $25.00'}
                           className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red placeholder-gym-gray/50"
                         />
-                        {cuotaAbono.saldo_pendiente > 0 && (
+                        {cuotaAbono && cuotaAbono.saldo_pendiente > 0 && (
                           <button type="button" onClick={() => setMontoAbono(cuotaAbono.saldo_pendiente.toFixed(2))} className="text-xs text-gym-gray hover:text-gym-red mt-1 transition-colors">
                             Completar saldo pendiente (${cuotaAbono.saldo_pendiente.toFixed(2)})
                           </button>
@@ -1010,8 +991,7 @@ export default function Pagos() {
                   (clienteEstado?.tieneInscripcion && tipoWatch === 'inscripcion') ||
                   (tipoWatch === 'abono' && loadingCuota) ||
                   (tipoWatch === 'abono' && cuotaCompletada) ||
-                  (tipoWatch === 'abono' && !cuotaAbono && !montoTotalCuota) ||
-                  (tipoWatch === 'abono' && cuotaAbono && (!montoAbono || Number(montoAbono) <= 0))
+                  (tipoWatch === 'abono' && (!montoAbono || Number(montoAbono) <= 0))
                 }
                 className="w-full bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-3 rounded-xl btn-interactive"
               >
@@ -1021,9 +1001,7 @@ export default function Pagos() {
                       ? 'Mensualidad completada ✓'
                       : loadingCuota
                         ? 'Cargando...'
-                        : !cuotaAbono
-                          ? `Crear cuota — $${Number(montoTotalCuota).toFixed(2)}`
-                          : `Registrar abono${montoAbono ? ` — $${Number(montoAbono).toFixed(2)}` : ''}`
+                        : `Registrar abono${montoAbono ? ` — $${Number(montoAbono).toFixed(2)}` : ''}`
                     : `Registrar — $${montoFinal.toFixed(2)}`
                 }
               </button>

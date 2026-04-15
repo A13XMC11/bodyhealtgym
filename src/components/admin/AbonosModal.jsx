@@ -17,11 +17,9 @@ export default function AbonosModal({ client, onClose, onAbonoRegistrado }) {
   const [cuota, setCuota] = useState(null)
   const [abonos, setAbonos] = useState([])
   const [monto, setMonto] = useState('')
-  const [montoPersonalizado, setMontoPersonalizado] = useState(MONTO_MENSUAL)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [pagada, setPagada] = useState(false)
-  const [creandoCuota, setCreandoCuota] = useState(false)
 
   const mes = mesHoy()
 
@@ -44,18 +42,6 @@ export default function AbonosModal({ client, onClose, onAbonoRegistrado }) {
     setLoading(false)
   }
 
-  const handleCrearCuota = async () => {
-    setCreandoCuota(true)
-    try {
-      const nuevaCuota = await crearCuota(client.id, mes, montoPersonalizado)
-      setCuota(nuevaCuota)
-      setAbonos([])
-    } catch (err) {
-      toast.error(err.message || 'Error al crear cuota')
-    }
-    setCreandoCuota(false)
-  }
-
   const handleRegistrarAbono = async () => {
     const montoNum = Number(monto)
     if (!montoNum || montoNum <= 0) {
@@ -65,8 +51,15 @@ export default function AbonosModal({ client, onClose, onAbonoRegistrado }) {
 
     setSaving(true)
     try {
+      let cuotaActual = cuota
+      if (!cuotaActual) {
+        cuotaActual = await crearCuota(client.id, mes, MONTO_MENSUAL)
+        setCuota(cuotaActual)
+        setAbonos([])
+      }
+
       const { cuota: cuotaActualizada, membresia } = await registrarAbono(
-        cuota.id,
+        cuotaActual.id,
         montoNum,
         client.id,
       )
@@ -74,7 +67,7 @@ export default function AbonosModal({ client, onClose, onAbonoRegistrado }) {
       setCuota(cuotaActualizada)
       setMonto('')
 
-      const abonosActualizados = await fetchAbonosDeCuota(cuota.id)
+      const abonosActualizados = await fetchAbonosDeCuota(cuotaActual.id)
       setAbonos(abonosActualizados)
 
       if (cuotaActualizada.estado === 'pagada' || membresia) {
@@ -131,32 +124,37 @@ export default function AbonosModal({ client, onClose, onAbonoRegistrado }) {
               </button>
             </div>
           ) : !cuota ? (
-            /* Sin cuota activa — crear una nueva */
-            <div className="space-y-4">
-              <p className="text-gym-gray text-sm">
-                No hay cuota abierta para <span className="text-white capitalize">{nombreMes}</span>.
-                Crea una para comenzar a registrar abonos.
-              </p>
-              <div>
-                <label className="block text-gym-gray text-xs font-semibold uppercase mb-1.5">
-                  Monto total a cobrar ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="1"
-                  value={montoPersonalizado}
-                  onChange={(e) => setMontoPersonalizado(Number(e.target.value))}
-                  className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
-                />
+            /* Sin cuota activa — mostrar input de abono directamente */
+            <div className="space-y-5">
+              <div className="bg-gym-black border border-white/5 rounded-xl px-4 py-3">
+                <p className="text-gym-gray text-sm">
+                  Cuota mensual: <span className="text-white font-bold">${MONTO_MENSUAL.toFixed(2)}</span> pendiente
+                </p>
               </div>
-              <button
-                onClick={handleCrearCuota}
-                disabled={creandoCuota || !montoPersonalizado}
-                className="w-full bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-2.5 rounded-xl btn-interactive text-sm"
-              >
-                {creandoCuota ? 'Creando...' : `Crear cuota de $${montoPersonalizado}`}
-              </button>
+              <div className="space-y-2">
+                <label className="block text-gym-gray text-xs font-semibold uppercase">
+                  Registrar abono
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    value={monto}
+                    onChange={(e) => setMonto(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRegistrarAbono()}
+                    placeholder={`Máx. $${MONTO_MENSUAL.toFixed(2)}`}
+                    className="flex-1 bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red placeholder-gym-gray/50"
+                  />
+                  <button
+                    onClick={handleRegistrarAbono}
+                    disabled={saving}
+                    className="bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold px-4 py-2.5 rounded-lg btn-interactive text-sm whitespace-nowrap"
+                  >
+                    {saving ? '...' : 'Registrar'}
+                  </button>
+                </div>
+              </div>
             </div>
           ) : (
             /* Cuota activa — mostrar progreso y registrar abono */

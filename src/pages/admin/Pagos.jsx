@@ -4,11 +4,11 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
-import { Plus, X, Filter, Clock, ExternalLink, TrendingDown, Trash2 } from 'lucide-react'
+import { Plus, X, Filter, Clock, ExternalLink, TrendingDown, Trash2, CheckCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { fechaHoy, mesHoy, parseFechaLocal, formatFechaISO, formatearFecha, formatearFechaObj } from '../../lib/dates'
-import { fetchCuotasPendientes } from '../../lib/cuotas'
+import { fetchCuotasPendientes, getCuotaActivaPorMes, crearCuota, registrarAbono, fetchAbonosDeCuota } from '../../lib/cuotas'
 import AbonosModal from '../../components/admin/AbonosModal'
 
 
@@ -44,6 +44,12 @@ export default function Pagos() {
   const [checkingCliente, setCheckingCliente] = useState(false)
   const [confirmDeletePago, setConfirmDeletePago] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
+  const [cuotaAbono, setCuotaAbono] = useState(null)
+  const [abonosAbono, setAbonosAbono] = useState([])
+  const [loadingCuota, setLoadingCuota] = useState(false)
+  const [montoAbono, setMontoAbono] = useState('')
+  const [montoTotalCuota, setMontoTotalCuota] = useState(25)
+  const [cuotaCompletada, setCuotaCompletada] = useState(false)
 
   const { register, handleSubmit, reset, watch, setValue } = useForm({
     defaultValues: { tipo: 'mensual', precio_diario: 3, descuento: 0 }
@@ -86,6 +92,34 @@ export default function Pagos() {
     if (!clientWatch) { setClienteEstado(null); return }
     verificarCliente(clientWatch)
   }, [clientWatch])
+
+  useEffect(() => {
+    if (tipoWatch !== 'abono' || !clientWatch) {
+      setCuotaAbono(null)
+      setAbonosAbono([])
+      setCuotaCompletada(false)
+      setMontoAbono('')
+      return
+    }
+    cargarCuotaAbono(clientWatch)
+  }, [tipoWatch, clientWatch])
+
+  const cargarCuotaAbono = async (clientId) => {
+    setLoadingCuota(true)
+    try {
+      const cuotaActiva = await getCuotaActivaPorMes(clientId, mesHoy())
+      setCuotaAbono(cuotaActiva)
+      if (cuotaActiva) {
+        const abonosData = await fetchAbonosDeCuota(cuotaActiva.id)
+        setAbonosAbono(abonosData)
+      } else {
+        setAbonosAbono([])
+      }
+    } catch {
+      toast.error('Error al cargar cuota')
+    }
+    setLoadingCuota(false)
+  }
 
   // Auto-reset tipo if current selection becomes blocked after client change
   useEffect(() => {
@@ -174,6 +208,48 @@ export default function Pagos() {
   const onSubmit = async (formData) => {
     setSaving(true)
     try {
+      // --- Abono mensual ---
+      if (formData.tipo === 'abono') {
+        if (!cuotaAbono) {
+          if (!montoTotalCuota || montoTotalCuota <= 0) {
+            toast.error('Ingresa un monto total válido')
+            setSaving(false)
+            return
+          }
+          const nuevaCuota = await crearCuota(formData.client_id, mesHoy(), montoTotalCuota)
+          setCuotaAbono(nuevaCuota)
+          setAbonosAbono([])
+          toast.success(`Cuota de $${Number(montoTotalCuota).toFixed(2)} creada — ahora registra el abono`)
+          setSaving(false)
+          return
+        }
+
+        const montoNum = Number(montoAbono)
+        if (!montoNum || montoNum <= 0) {
+          toast.error('Ingresa un monto de abono válido')
+          setSaving(false)
+          return
+        }
+
+        const { cuota: cuotaActualizada, membresia } = await registrarAbono(cuotaAbono.id, montoNum, formData.client_id)
+        setCuotaAbono(cuotaActualizada)
+        setMontoAbono('')
+
+        const abonosActualizados = await fetchAbonosDeCuota(cuotaAbono.id)
+        setAbonosAbono(abonosActualizados)
+
+        if (cuotaActualizada.estado === 'pagada' || membresia) {
+          setCuotaCompletada(true)
+          toast.success('Mensualidad completada — membresía extendida 30 días')
+        } else {
+          toast.success(`Abono de $${montoNum.toFixed(2)} registrado`)
+        }
+
+        fetchAll()
+        setSaving(false)
+        return
+      }
+
       // Validaciones de bloqueo antes de llegar a Supabase
       if (clienteEstado?.tieneInscripcion && formData.tipo === 'inscripcion') {
         toast.error('No se puede registrar este pago. Este cliente ya tiene inscripción registrada.')
@@ -700,7 +776,7 @@ export default function Pagos() {
           <div className="bg-gym-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-white font-bold text-lg">Registrar Pago</h3>
-              <button onClick={() => { setShowModal(false); reset(); setClienteEstado(null) }} className="text-gym-gray hover:text-white btn-icon">
+              <button onClick={() => { setShowModal(false); reset(); setClienteEstado(null); setCuotaAbono(null); setAbonosAbono([]); setMontoAbono(''); setMontoTotalCuota(25); setCuotaCompletada(false) }} className="text-gym-gray hover:text-white btn-icon">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -754,6 +830,7 @@ export default function Pagos() {
                   <option value="inscripcion" disabled={clienteEstado?.tieneInscripcion}>
                     Inscripción — $5{clienteEstado?.tieneInscripcion ? ' (ya pagado)' : ''}
                   </option>
+                  <option value="abono">Abono mensual</option>
                 </select>
                 {clienteEstado?.tieneInscripcion && tipoWatch === 'inscripcion' && (
                   <p className="text-gym-gray text-xs mt-1">
@@ -776,30 +853,117 @@ export default function Pagos() {
                     placeholder="3.00" />
                 </div>
               )}
-              <div>
-                <label className="block text-gym-gray text-xs mb-1">Promoción (opcional)</label>
-                <select {...register('promocion_id')}
-                  className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red">
-                  <option value="">Sin promoción</option>
-                  {promociones.map((p) => (
-                    <option key={p.id} value={p.id}>{p.nombre} ({p.tipo})</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-gym-gray text-xs mb-1">Descuento ($)</label>
-                <input
-                  {...register('descuento')}
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  className={`w-full bg-gym-black border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none transition-colors ${descuentoError ? 'border-red-500 focus:border-red-500' : 'border-white/10 focus:border-gym-red'}`}
-                  placeholder="0.00"
-                />
-                {descuentoError && (
-                  <p className="text-red-400 text-xs mt-1">El descuento no puede ser mayor al monto total</p>
-                )}
-              </div>
+              {/* Sección abono mensual */}
+              {tipoWatch === 'abono' && (
+                <div className="space-y-4">
+                  {loadingCuota ? (
+                    <div className="flex justify-center py-4">
+                      <div className="w-6 h-6 border-2 border-gym-red border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : cuotaCompletada ? (
+                    <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 text-center space-y-2">
+                      <CheckCircle className="w-10 h-10 text-green-400 mx-auto" />
+                      <p className="text-white font-bold">Mensualidad completada</p>
+                      <p className="text-gym-gray text-sm">La membresía fue extendida 30 días</p>
+                    </div>
+                  ) : !cuotaAbono ? (
+                    <div className="space-y-3">
+                      <p className="text-gym-gray text-sm">
+                        No hay cuota abierta para este mes. Define el monto total y créala.
+                      </p>
+                      <div>
+                        <label className="block text-gym-gray text-xs mb-1">Monto total a cobrar ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="1"
+                          value={montoTotalCuota}
+                          onChange={(e) => setMontoTotalCuota(Number(e.target.value))}
+                          className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Progreso de la cuota */}
+                      <div className="bg-gym-black border border-white/5 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-white font-semibold">Cuota mensual</span>
+                          <span className="text-gym-gray">${cuotaAbono.monto_total.toFixed(2)}</span>
+                        </div>
+                        <div className="relative h-2 bg-white/10 rounded-full overflow-hidden">
+                          <div className="absolute left-0 top-0 h-full bg-gym-red rounded-full transition-all duration-500" style={{ width: `${cuotaAbono.porcentaje}%` }} />
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-400 font-semibold">Pagado: ${cuotaAbono.monto_pagado.toFixed(2)}</span>
+                          <span className="text-red-400 font-semibold">Pendiente: ${cuotaAbono.saldo_pendiente.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      {/* Monto del abono */}
+                      <div>
+                        <label className="block text-gym-gray text-xs mb-1">Monto del abono ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={montoAbono}
+                          onChange={(e) => setMontoAbono(e.target.value)}
+                          placeholder={`Máx. $${cuotaAbono.saldo_pendiente.toFixed(2)}`}
+                          className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red placeholder-gym-gray/50"
+                        />
+                        {cuotaAbono.saldo_pendiente > 0 && (
+                          <button type="button" onClick={() => setMontoAbono(cuotaAbono.saldo_pendiente.toFixed(2))} className="text-xs text-gym-gray hover:text-gym-red mt-1 transition-colors">
+                            Completar saldo pendiente (${cuotaAbono.saldo_pendiente.toFixed(2)})
+                          </button>
+                        )}
+                      </div>
+                      {/* Historial de abonos */}
+                      {abonosAbono.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-gym-gray text-xs font-semibold uppercase">Abonos anteriores</p>
+                          <div className="space-y-1 max-h-32 overflow-y-auto">
+                            {abonosAbono.map((a) => (
+                              <div key={a.id} className="flex justify-between bg-gym-black border border-white/5 rounded-lg px-3 py-2">
+                                <span className="text-gym-gray text-xs">{format(parseFechaLocal(a.fecha_pago), 'dd MMM', { locale: es })}</span>
+                                <span className="text-white text-xs font-semibold">${Number(a.monto).toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tipoWatch !== 'abono' && (
+                <>
+                  <div>
+                    <label className="block text-gym-gray text-xs mb-1">Promoción (opcional)</label>
+                    <select {...register('promocion_id')}
+                      className="w-full bg-gym-black border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-gym-red">
+                      <option value="">Sin promoción</option>
+                      {promociones.map((p) => (
+                        <option key={p.id} value={p.id}>{p.nombre} ({p.tipo})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-gym-gray text-xs mb-1">Descuento ($)</label>
+                    <input
+                      {...register('descuento')}
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className={`w-full bg-gym-black border rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none transition-colors ${descuentoError ? 'border-red-500 focus:border-red-500' : 'border-white/10 focus:border-gym-red'}`}
+                      placeholder="0.00"
+                    />
+                    {descuentoError && (
+                      <p className="text-red-400 text-xs mt-1">El descuento no puede ser mayor al monto total</p>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block text-gym-gray text-xs mb-1">Notas (opcional)</label>
@@ -808,40 +972,56 @@ export default function Pagos() {
                   placeholder="Observaciones..." />
               </div>
 
-              {/* Resumen de pago */}
-              <div className="bg-gym-black border border-gym-red/30 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gym-gray">Monto original</span>
-                  <span className="text-white font-medium">
-                    ${montoCalculado.toFixed(2)}
-                    {selectedPromo && <span className="text-gym-red text-xs ml-1">({selectedPromo.nombre})</span>}
-                  </span>
-                </div>
-                {descuento > 0 && (
+              {/* Resumen de pago (solo tipos normales) */}
+              {tipoWatch !== 'abono' && (
+                <div className="bg-gym-black border border-gym-red/30 rounded-xl p-4 space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-gym-gray">Descuento</span>
-                    <span className="text-yellow-400 font-medium">−${descuento.toFixed(2)}</span>
+                    <span className="text-gym-gray">Monto original</span>
+                    <span className="text-white font-medium">
+                      ${montoCalculado.toFixed(2)}
+                      {selectedPromo && <span className="text-gym-red text-xs ml-1">({selectedPromo.nombre})</span>}
+                    </span>
                   </div>
-                )}
-                <div className="border-t border-white/10 pt-2 flex items-center justify-between">
-                  <span className="text-gym-gray text-xs font-semibold uppercase tracking-wide">Total a pagar</span>
-                  <span className="text-gym-red text-2xl font-black">${montoFinal.toFixed(2)}</span>
+                  {descuento > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gym-gray">Descuento</span>
+                      <span className="text-yellow-400 font-medium">−${descuento.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="border-t border-white/10 pt-2 flex items-center justify-between">
+                    <span className="text-gym-gray text-xs font-semibold uppercase tracking-wide">Total a pagar</span>
+                    <span className="text-gym-red text-2xl font-black">${montoFinal.toFixed(2)}</span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <button
                 type="submit"
                 disabled={
                   saving ||
                   checkingCliente ||
-                  descuentoError ||
+                  (tipoWatch !== 'abono' && descuentoError) ||
                   (clienteEstado?.bloqueoMensual && tipoWatch === 'mensual') ||
                   (clienteEstado?.bloqueoMensual && tipoWatch === 'diario') ||
-                  (clienteEstado?.tieneInscripcion && tipoWatch === 'inscripcion')
+                  (clienteEstado?.tieneInscripcion && tipoWatch === 'inscripcion') ||
+                  (tipoWatch === 'abono' && loadingCuota) ||
+                  (tipoWatch === 'abono' && cuotaCompletada) ||
+                  (tipoWatch === 'abono' && !cuotaAbono && !montoTotalCuota) ||
+                  (tipoWatch === 'abono' && cuotaAbono && (!montoAbono || Number(montoAbono) <= 0))
                 }
                 className="w-full bg-gym-red hover:bg-gym-red-hover disabled:opacity-50 text-white font-bold py-3 rounded-xl btn-interactive"
               >
-                {saving ? 'Guardando...' : checkingCliente ? 'Verificando...' : `Registrar — $${montoFinal.toFixed(2)}`}
+                {saving ? 'Guardando...' : checkingCliente ? 'Verificando...' :
+                  tipoWatch === 'abono'
+                    ? cuotaCompletada
+                      ? 'Mensualidad completada ✓'
+                      : loadingCuota
+                        ? 'Cargando...'
+                        : !cuotaAbono
+                          ? `Crear cuota — $${Number(montoTotalCuota).toFixed(2)}`
+                          : `Registrar abono${montoAbono ? ` — $${Number(montoAbono).toFixed(2)}` : ''}`
+                    : `Registrar — $${montoFinal.toFixed(2)}`
+                }
               </button>
             </form>
           </div>

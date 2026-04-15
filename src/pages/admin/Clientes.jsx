@@ -1017,7 +1017,7 @@ export default function Clientes() {
       {/* Modal: Payment history + Attendance */}
       {showPagos && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-gym-dark border border-white/10 rounded-2xl p-8 w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto">
+          <div className="bg-gym-dark border border-white/10 rounded-2xl p-5 w-full max-w-lg shadow-2xl max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-white font-bold text-lg">

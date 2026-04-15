@@ -674,16 +674,20 @@ export default function Clientes() {
           .select('monto')
           .eq('cuota_id', pago.cuota_id)
         const totalPagado = (sumData || []).reduce((acc, p) => acc + Number(p.monto), 0)
-        const { data: cuota } = await supabase
-          .from('cuotas')
-          .select('monto_total')
-          .eq('id', pago.cuota_id)
-          .single()
-        const nuevoEstado = totalPagado >= (cuota?.monto_total ?? 25) ? 'pagada' : 'pendiente'
-        await supabase
-          .from('cuotas')
-          .update({ monto_pagado: totalPagado, estado: nuevoEstado })
-          .eq('id', pago.cuota_id)
+        if (totalPagado === 0) {
+          await supabase.from('cuotas').delete().eq('id', pago.cuota_id)
+        } else {
+          const { data: cuota } = await supabase
+            .from('cuotas')
+            .select('monto_total')
+            .eq('id', pago.cuota_id)
+            .single()
+          const nuevoEstado = totalPagado >= (cuota?.monto_total ?? 25) ? 'pagada' : 'pendiente'
+          await supabase
+            .from('cuotas')
+            .update({ monto_pagado: totalPagado, estado: nuevoEstado })
+            .eq('id', pago.cuota_id)
+        }
       }
 
       if (pago.tipo === 'mensual') {

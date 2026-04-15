@@ -20,9 +20,9 @@ export default function Sidebar({ onClose }) {
             alt="Body Health Gym"
             className="w-9 h-9 object-contain flex-shrink-0"
           />
-          <div className="min-w-0">
-            <div className="text-white font-black text-xs sm:text-sm leading-tight truncate">BODY HEALTH</div>
-            <div className="text-gym-red font-black text-xs sm:text-sm leading-tight truncate">GYM</div>
+          <div className="min-w-0 flex-1">
+            <div className="text-white font-black text-xs sm:text-sm leading-tight whitespace-nowrap">BODY HEALTH</div>
+            <div className="text-gym-red font-black text-xs sm:text-sm leading-tight whitespace-nowrap">GYM</div>
           </div>
         </div>
       </div>

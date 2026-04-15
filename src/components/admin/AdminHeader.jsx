@@ -94,13 +94,16 @@ export default function AdminHeader({ onMenuClick, isSidebarOpen }) {
         <Menu className={`w-5 h-5 transition-transform duration-200 ease-out ${isSidebarOpen ? 'rotate-90' : ''}`} />
       </button>
 
-      <div className="hidden sm:flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
         <img
           src="/logoBHG.png"
           alt="Body Health Gym"
           className="w-6 h-6 object-contain"
         />
-        <h1 className="text-white font-semibold text-sm tracking-wide">Panel de Administración</h1>
+        <h1 className="text-white font-semibold text-xs sm:text-sm tracking-wide whitespace-nowrap">
+          <span className="sm:hidden">Admin</span>
+          <span className="hidden sm:inline">Panel de Administración</span>
+        </h1>
       </div>
 
       {/* Search - Hidden on very small screens, resized on mobile */}
@@ -154,10 +157,10 @@ export default function AdminHeader({ onMenuClick, isSidebarOpen }) {
       </div>
 
       {/* User Info and Logout */}
-      <div className="flex items-center gap-2 sm:gap-4 ml-auto">
-        <div className="hidden sm:flex items-center gap-2 text-xs sm:text-sm text-gym-gray">
+      <div className="flex items-center gap-1 sm:gap-4 ml-auto">
+        <div className="hidden lg:flex items-center gap-2 text-xs sm:text-sm text-gym-gray min-w-0">
           <User className="w-4 h-4 flex-shrink-0" />
-          <span className="truncate max-w-[150px]">{user?.email}</span>
+          <span className="truncate">{user?.email}</span>
         </div>
         <button
           onClick={handleSignOut}
